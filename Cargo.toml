@@ -1,0 +1,14 @@
+[package]
+name = "havax"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+clap = { version = "4.6.7", features = ["derive"] }
+crossterm = "0.29.0"
+libloading = "0.9.0"
+serde = { version = "1.0.229", features = ["derive"] }
+serde_json = "1.0.151"
+toml = "1.1.6"
+tree-sitter = "0.25"
+tree-sitter-rust = "0.24"
