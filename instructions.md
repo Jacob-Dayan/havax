@@ -19,7 +19,7 @@ cargo build
 # Run
 cargo run -- [OPTIONS] [FILES]...
 
-# Test (38 unit tests)
+# Test (40 unit tests)
 cargo test
 
 # Lint
@@ -241,6 +241,13 @@ hidden = false
 - Guarded `:w` against unnamed buffers without paths (`"No file name. Use :w <PATH> to save."`)
 - `:w <PATH>` sets buffer path, re-parses Tree-sitter AST, and saves to disk
 
+### Phase 12 — TOML LSP, Tree-Sitter & Havax Config Isolation
+- Config paths resolution correctly targets `~/.config/havax/config.toml`, `~/.havax/config.toml`, and `.havax/config.toml` (workspace)
+- Added dedicated TOML Tree-sitter AST highlighting (`[editor]`, `bare_key`, `string`, `boolean`, `comment`, etc.)
+- Multi-language LSP infrastructure: `rust-analyzer` for Rust and `taplo` (`taplo lsp stdio`) for TOML
+- Curated TOML completions for schema keys, sections, themes, cursor shapes, and booleans (no Rust stdlib leakage)
+- Statusline dynamically reflects buffer language (`[rust]`, `[toml]`)
+
 ---
 
 ## Testing
@@ -249,15 +256,15 @@ hidden = false
 cargo test
 ```
 
-38 tests covering:
+40 tests covering:
 - CLI argument parsing and `-a` directory scanning
-- TOML configuration deserialization
+- TOML configuration deserialization & Havax config path resolution
 - All command-mode commands (`:new`, `:pwd`, `:cd`, `:set-language`, `:config-open`, `:config-reload`)
 - Visual mode motions (`vgl`)
 - Word/back-word motions with selection marking
 - Match mode (brackets, surround, select around/inside)
-- Tree-sitter syntax highlighting accuracy
-- LSP diagnostics and completion triggering
+- Tree-sitter syntax highlighting accuracy (Rust and TOML)
+- LSP diagnostics and completion triggering (Rust and TOML)
 - Scoped module completions filtering
 - Command-mode Tab/BackTab cycling
 - Theme inheritance and custom overrides

@@ -339,9 +339,9 @@ impl Editor {
                 self.open_buffer(path)?;
             }
             "config-open-workspace" => {
-                let ws_cfg = PathBuf::from(".helix/config.toml");
+                let ws_cfg = PathBuf::from(".havax/config.toml");
                 if !ws_cfg.exists() {
-                    let _ = std::fs::create_dir_all(".helix");
+                    let _ = std::fs::create_dir_all(".havax");
                     let _ = Config::write_sample_config(&ws_cfg);
                 }
                 self.open_buffer(ws_cfg)?;
@@ -367,22 +367,30 @@ impl Editor {
                 if let Some(mut lsp) = self.lsp.take() {
                     lsp.stop();
                 }
-                self.lsp = crate::lsp::LspClient::new(root);
-                self.notify_lsp_open();
-                if self.lsp.is_some() {
-                    self.set_status("LSP: restarted rust-analyzer", false);
-                } else {
-                    self.set_status(
-                        "LSP: rust-analyzer not found in PATH (re-initialized LSP status)",
-                        false,
-                    );
+                if let Some(mut toml_lsp) = self.toml_lsp.take() {
+                    toml_lsp.stop();
                 }
+                self.lsp = crate::lsp::LspClient::new_rust(root.clone());
+                self.toml_lsp = crate::lsp::LspClient::new_toml(root);
+                self.notify_lsp_open();
+                let status_msg = match (self.lsp.is_some(), self.toml_lsp.is_some()) {
+                    (true, true) => "LSP: restarted rust-analyzer and taplo",
+                    (true, false) => "LSP: restarted rust-analyzer",
+                    (false, true) => "LSP: restarted taplo",
+                    (false, false) => {
+                        "LSP: servers not found in PATH (re-initialized LSP status)"
+                    }
+                };
+                self.set_status(status_msg, false);
             }
             "lsp-stop" => {
                 if let Some(mut lsp) = self.lsp.take() {
                     lsp.stop();
                 }
-                self.set_status("LSP: stopped rust-analyzer", false);
+                if let Some(mut toml_lsp) = self.toml_lsp.take() {
+                    toml_lsp.stop();
+                }
+                self.set_status("LSP: stopped language servers", false);
             }
             "lsp-workspace-command" => {
                 self.set_status("LSP: no active workspace command", false);

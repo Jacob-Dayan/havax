@@ -52,8 +52,22 @@ pub struct LspClient {
 
 impl LspClient {
     pub fn new(root_dir: PathBuf) -> Option<Self> {
+        Self::new_rust(root_dir)
+    }
+
+    pub fn new_rust(root_dir: PathBuf) -> Option<Self> {
         let ra_path = find_rust_analyzer()?;
-        let mut child = Command::new(&ra_path)
+        Self::spawn(&ra_path, &[], root_dir)
+    }
+
+    pub fn new_toml(root_dir: PathBuf) -> Option<Self> {
+        let taplo_path = find_taplo()?;
+        Self::spawn(&taplo_path, &["lsp", "stdio"], root_dir)
+    }
+
+    pub fn spawn(bin_path: &Path, args: &[&str], root_dir: PathBuf) -> Option<Self> {
+        let mut child = Command::new(bin_path)
+            .args(args)
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::null())
@@ -291,8 +305,8 @@ fn uri_to_path(uri: &str) -> Option<PathBuf> {
 
 pub fn find_rust_analyzer() -> Option<PathBuf> {
     // 1. Check user cargo bin
-    if let Ok(home) = std::env::var("HOME") {
-        let cargo_ra = PathBuf::from(home).join(".cargo/bin/rust-analyzer");
+    if let Ok(home) = std::env::var("HOME").or_else(|_| std::env::var("USERPROFILE")) {
+        let cargo_ra = PathBuf::from(&home).join(".cargo/bin/rust-analyzer");
         if cargo_ra.exists() {
             return Some(cargo_ra);
         }
@@ -307,6 +321,33 @@ pub fn find_rust_analyzer() -> Option<PathBuf> {
             #[cfg(windows)]
             {
                 let bin_exe = dir.join("rust-analyzer.exe");
+                if bin_exe.exists() {
+                    return Some(bin_exe);
+                }
+            }
+        }
+    }
+    None
+}
+
+pub fn find_taplo() -> Option<PathBuf> {
+    // 1. Check user cargo bin
+    if let Ok(home) = std::env::var("HOME").or_else(|_| std::env::var("USERPROFILE")) {
+        let cargo_taplo = PathBuf::from(&home).join(".cargo/bin/taplo");
+        if cargo_taplo.exists() {
+            return Some(cargo_taplo);
+        }
+    }
+    // 2. Check PATH
+    if let Ok(path_var) = std::env::var("PATH") {
+        for dir in std::env::split_paths(&path_var) {
+            let bin = dir.join("taplo");
+            if bin.exists() {
+                return Some(bin);
+            }
+            #[cfg(windows)]
+            {
+                let bin_exe = dir.join("taplo.exe");
                 if bin_exe.exists() {
                     return Some(bin_exe);
                 }
@@ -1007,6 +1048,81 @@ pub fn get_standard_rust_completions(prefix: &str) -> Vec<CompletionItem> {
     results
 }
 
+/// Curated list of standard TOML completion items (tables, properties, booleans, themes, cursor shapes)
+pub fn get_standard_toml_completions(prefix: &str) -> Vec<CompletionItem> {
+    let standard_items = [
+        // Sections / Tables
+        ("[editor]", "table", Some("Editor configuration section"), "[editor]"),
+        ("[editor.cursor-shape]", "table", Some("Cursor shapes for normal/insert/select"), "[editor.cursor-shape]"),
+        ("[editor.file-picker]", "table", Some("File picker settings"), "[editor.file-picker]"),
+        ("[package]", "table", Some("Package metadata section"), "[package]"),
+        ("[dependencies]", "table", Some("Dependencies section"), "[dependencies]"),
+        ("[dev-dependencies]", "table", Some("Dev dependencies section"), "[dev-dependencies]"),
+        ("[build-dependencies]", "table", Some("Build dependencies section"), "[build-dependencies]"),
+        ("[features]", "table", Some("Feature flags section"), "[features]"),
+        ("[workspace]", "table", Some("Workspace configuration section"), "[workspace]"),
+        ("[profile.dev]", "table", Some("Development profile options"), "[profile.dev]"),
+        ("[profile.release]", "table", Some("Release profile options"), "[profile.release]"),
+        // Settings & keys
+        ("theme", "property", Some("Color theme name"), "theme"),
+        ("line-number", "property", Some("Line numbers: 'absolute' or 'relative'"), "line-number"),
+        ("bufferline", "property", Some("Tab bar: 'always', 'multiple', or 'never'"), "bufferline"),
+        ("mouse", "property", Some("Enable mouse: true or false"), "mouse"),
+        ("cursor-shape", "property", Some("Cursor shapes table"), "cursor-shape"),
+        ("file-picker", "property", Some("File picker table"), "file-picker"),
+        ("insert", "property", Some("Insert mode cursor: 'bar', 'block', 'underline'"), "insert"),
+        ("normal", "property", Some("Normal mode cursor: 'block', 'bar', 'underline'"), "normal"),
+        ("select", "property", Some("Select mode cursor: 'underline', 'block', 'bar'"), "select"),
+        ("hidden", "property", Some("Show hidden files: true or false"), "hidden"),
+        ("follow-symlinks", "property", Some("Follow symlinks in file picker: true or false"), "follow-symlinks"),
+        ("inherits", "property", Some("Theme to inherit from"), "inherits"),
+        ("name", "property", Some("Package name"), "name"),
+        ("version", "property", Some("Package version"), "version"),
+        ("edition", "property", Some("Rust edition (e.g. '2024')"), "edition"),
+        ("authors", "property", Some("Package authors list"), "authors"),
+        ("description", "property", Some("Package description"), "description"),
+        ("license", "property", Some("Package license (e.g. 'MIT')"), "license"),
+        // Values & keywords
+        ("true", "keyword", Some("Boolean true"), "true"),
+        ("false", "keyword", Some("Boolean false"), "false"),
+        ("\"absolute\"", "value", Some("Absolute line numbers"), "\"absolute\""),
+        ("\"relative\"", "value", Some("Relative line numbers"), "\"relative\""),
+        ("\"always\"", "value", Some("Always show bufferline"), "\"always\""),
+        ("\"multiple\"", "value", Some("Show bufferline when >1 buffer"), "\"multiple\""),
+        ("\"never\"", "value", Some("Never show bufferline"), "\"never\""),
+        ("\"bar\"", "value", Some("Bar cursor shape"), "\"bar\""),
+        ("\"block\"", "value", Some("Block cursor shape"), "\"block\""),
+        ("\"underline\"", "value", Some("Underline cursor shape"), "\"underline\""),
+        ("\"one-half-dark\"", "value", Some("One Half Dark theme"), "\"one-half-dark\""),
+        ("\"one-dark\"", "value", Some("One Dark (Atom) theme"), "\"one-dark\""),
+        ("\"catppuccin-mocha\"", "value", Some("Catppuccin Mocha theme"), "\"catppuccin-mocha\""),
+        ("\"dracula\"", "value", Some("Dracula theme"), "\"dracula\""),
+        ("\"nord\"", "value", Some("Nord theme"), "\"nord\""),
+        ("\"gruvbox-dark\"", "value", Some("Gruvbox Dark theme"), "\"gruvbox-dark\""),
+        ("\"one-half-light\"", "value", Some("One Half Light theme"), "\"one-half-light\""),
+    ];
+
+    let p_lower = prefix.to_lowercase();
+    let mut results = Vec::new();
+
+    for (label, kind, detail, insert) in standard_items {
+        let l_lower = label.to_lowercase();
+        if p_lower.is_empty()
+            || l_lower.starts_with(&p_lower)
+            || l_lower.contains(&p_lower)
+        {
+            results.push(CompletionItem {
+                label: label.to_string(),
+                detail: detail.map(String::from),
+                kind_name: kind.to_string(),
+                insert_text: Some(insert.to_string()),
+            });
+        }
+    }
+
+    results
+}
+
 fn is_subsequence(sub: &str, target: &str) -> bool {
     let mut target_chars = target.chars();
     for sc in sub.chars() {
@@ -1022,8 +1138,9 @@ pub fn get_buffer_diagnostics(
     tree: Option<&tree_sitter::Tree>,
     lines: &[String],
     lsp: Option<&LspClient>,
+    lang: &str,
 ) -> Vec<Diagnostic> {
-    // 1. Check if rust-analyzer LSP has reported diagnostics for this file
+    // 1. Check if language server has reported diagnostics for this file
     if let Some(lsp) = lsp {
         let diags = lsp.get_diagnostics(path);
         if !diags.is_empty() {
@@ -1031,14 +1148,14 @@ pub fn get_buffer_diagnostics(
         }
     }
 
-    // 2. Tree-sitter syntax error AST traversal
+    // 2. Tree-sitter syntax error AST traversal (works for both Rust and TOML)
     let mut diags = Vec::new();
     if let Some(t) = tree {
         collect_tree_sitter_errors(t.root_node(), lines, &mut diags);
     }
 
-    // 3. Common Rust syntax error heuristics (e.g. unclosed let statement without semicolon)
-    if diags.is_empty() {
+    // 3. Common Rust syntax error heuristics (only for Rust files)
+    if diags.is_empty() && lang == "rust" {
         for (row, line) in lines.iter().enumerate() {
             let trimmed = line.trim();
             if trimmed.starts_with("let ") && trimmed.contains('=') && !trimmed.ends_with(';') {

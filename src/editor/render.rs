@@ -100,11 +100,17 @@ impl Editor {
             current_buf.reparse();
         }
 
+        let lsp_client = match current_buf.language() {
+            "rust" => self.lsp.as_ref(),
+            "toml" => self.toml_lsp.as_ref(),
+            _ => None,
+        };
         let diagnostics = crate::lsp::get_buffer_diagnostics(
             &current_buf.path,
             current_buf.tree.as_ref(),
             &current_buf.lines,
-            self.lsp.as_ref(),
+            lsp_client,
+            current_buf.language(),
         );
 
         let diag_map: std::collections::HashMap<usize, &crate::lsp::Diagnostic> =
@@ -186,14 +192,13 @@ impl Editor {
                 write!(self.stdout, "{:>width$}  ", num_str, width = max_digits)?;
 
                 // 3. Highlighted code tokens
-                let is_rust = current_buf.path.extension().is_none_or(|ext| ext == "rs");
                 let tokens = highlight_line_treesitter(
                     current_buf.tree.as_ref(),
                     Some(&current_buf.path),
                     file_row,
                     &current_buf.lines[file_row],
                     &self.theme,
-                    is_rust,
+                    current_buf.language(),
                 );
 
                 let line_len = tokens.len();
@@ -334,14 +339,15 @@ impl Editor {
                 .unwrap_or(cur_buf.path.as_os_str())
                 .to_string_lossy();
             let is_unnamed = cur_buf.path.as_os_str().is_empty() || fname == "scratch";
+            let lang_name = cur_buf.language();
             let file_info = if is_unnamed {
                 if cur_buf.modified {
-                    " [+]".to_string()
+                    format!(" [{lang_name}] [+]")
                 } else {
-                    String::new()
+                    format!(" [{lang_name}]")
                 }
             } else {
-                format!(" {} [rust]{dirty_flag}", cur_buf.path.display())
+                format!(" {} [{lang_name}]{dirty_flag}", cur_buf.path.display())
             };
 
             let sel_info = if cur_buf.anchor != cur_buf.cursor {

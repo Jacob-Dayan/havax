@@ -315,6 +315,7 @@ mod tests {
             config_path: None,
             theme: Theme::default(),
             lsp: None,
+            toml_lsp: None,
             completion: crate::completion::CompletionMenu::new(),
             lsp_doc_version: 1,
             pending_c: false,
@@ -404,7 +405,7 @@ hidden = false
             0,
             &buf.lines[0],
             &theme,
-            true,
+            "rust",
         );
 
         // Verify tokens count matches line character count
@@ -458,6 +459,7 @@ hidden = false
             config_path: Some(custom_cfg_path.clone()),
             theme: Theme::from_name("dracula"),
             lsp: None,
+            toml_lsp: None,
             completion: crate::completion::CompletionMenu::new(),
             lsp_doc_version: 1,
             pending_c: false,
@@ -516,6 +518,7 @@ hidden = false
             config_path: None,
             theme: Theme::default(),
             lsp: None,
+            toml_lsp: None,
             completion: crate::completion::CompletionMenu::new(),
             lsp_doc_version: 1,
             pending_c: false,
@@ -673,6 +676,7 @@ hidden = false
             config_path: None,
             theme: Theme::default(),
             lsp: None,
+            toml_lsp: None,
             completion: crate::completion::CompletionMenu::new(),
             lsp_doc_version: 1,
             pending_c: false,
@@ -693,7 +697,7 @@ hidden = false
         assert!(res.is_ok());
         assert_eq!(
             editor.status_message,
-            Some(("LSP: stopped rust-analyzer".to_string(), false))
+            Some(("LSP: stopped language servers".to_string(), false))
         );
 
         // Execute :tree-sitter-subtree
@@ -727,7 +731,8 @@ hidden = false
         buf.lines = lines.clone();
         buf.reparse();
 
-        let diags = crate::lsp::get_buffer_diagnostics(&path, buf.tree.as_ref(), &lines, None);
+        let diags =
+            crate::lsp::get_buffer_diagnostics(&path, buf.tree.as_ref(), &lines, None, "rust");
         assert!(!diags.is_empty());
         let diag = diags.iter().find(|d| d.line == 1);
         assert!(diag.is_some());
@@ -796,6 +801,7 @@ hidden = false
             config_path: None,
             theme: Theme::default(),
             lsp: None,
+            toml_lsp: None,
             completion: crate::completion::CompletionMenu::new(),
             lsp_doc_version: 1,
             pending_c: false,
@@ -838,6 +844,7 @@ hidden = false
             config_path: None,
             theme: Theme::default(),
             lsp: None,
+            toml_lsp: None,
             completion: crate::completion::CompletionMenu::new(),
             lsp_doc_version: 1,
             pending_c: false,
@@ -921,6 +928,7 @@ hidden = false
             config_path: None,
             theme: Theme::default(),
             lsp: None,
+            toml_lsp: None,
             completion: crate::completion::CompletionMenu::new(),
             lsp_doc_version: 1,
             pending_c: false,
@@ -969,6 +977,7 @@ hidden = false
             config_path: None,
             theme: Theme::default(),
             lsp: None,
+            toml_lsp: None,
             completion: crate::completion::CompletionMenu::new(),
             lsp_doc_version: 1,
             pending_c: false,
@@ -1015,6 +1024,7 @@ hidden = false
             config_path: None,
             theme: Theme::default(),
             lsp: None,
+            toml_lsp: None,
             completion: crate::completion::CompletionMenu::new(),
             lsp_doc_version: 1,
             pending_c: false,
@@ -1100,6 +1110,7 @@ inherits = "catppuccin_mocha"
             config_path: None,
             theme: Theme::default(),
             lsp: None,
+            toml_lsp: None,
             completion: crate::completion::CompletionMenu::new(),
             lsp_doc_version: 1,
             pending_c: false,
@@ -1258,6 +1269,7 @@ inherits = "catppuccin_mocha"
             config_path: None,
             theme: Theme::default(),
             lsp: None,
+            toml_lsp: None,
             completion: crate::completion::CompletionMenu::new(),
             lsp_doc_version: 1,
             pending_c: false,
@@ -1317,6 +1329,7 @@ inherits = "catppuccin_mocha"
             config_path: None,
             theme: Theme::default(),
             lsp: None,
+            toml_lsp: None,
             completion: crate::completion::CompletionMenu::new(),
             lsp_doc_version: 1,
             pending_c: false,
@@ -1367,6 +1380,7 @@ inherits = "catppuccin_mocha"
             config_path: None,
             theme: Theme::default(),
             lsp: None,
+            toml_lsp: None,
             completion: crate::completion::CompletionMenu::new(),
             lsp_doc_version: 1,
             pending_c: false,
@@ -1480,6 +1494,7 @@ inherits = "catppuccin_mocha"
             config_path: None,
             theme: Theme::default(),
             lsp: None,
+            toml_lsp: None,
             completion: crate::completion::CompletionMenu::new(),
             lsp_doc_version: 1,
             pending_c: false,
@@ -1535,6 +1550,7 @@ inherits = "catppuccin_mocha"
             config_path: None,
             theme: Theme::default(),
             lsp: None,
+            toml_lsp: None,
             completion: crate::completion::CompletionMenu::new(),
             lsp_doc_version: 1,
             pending_c: false,
@@ -1583,5 +1599,61 @@ inherits = "catppuccin_mocha"
         // Verify completion includes "new"
         let completions = crate::editor::commands::get_command_completions("ne");
         assert!(completions.contains(&"new"));
+    }
+
+    #[test]
+    fn test_toml_tree_sitter_highlighting_and_completions() {
+        let path = PathBuf::from("config.toml");
+        let mut buf = Buffer::new(path.clone()).unwrap();
+        buf.lines = vec![
+            "[editor]".to_string(),
+            "theme = \"one-half-dark\"".to_string(),
+            "mouse = true".to_string(),
+            "# comment line".to_string(),
+        ];
+        buf.reparse();
+
+        let theme = Theme::from_name("one-half-dark");
+        let tokens_table = highlight_line_treesitter(
+            buf.tree.as_ref(),
+            Some(&path),
+            0,
+            &buf.lines[0],
+            &theme,
+            "toml",
+        );
+        assert_eq!(tokens_table.len(), buf.lines[0].len());
+
+        let tokens_comment = highlight_line_treesitter(
+            buf.tree.as_ref(),
+            Some(&path),
+            3,
+            &buf.lines[3],
+            &theme,
+            "toml",
+        );
+        assert_eq!(tokens_comment[0].1, theme.comment);
+
+        // Verify TOML completions contain TOML properties/sections and NOT Rust types
+        let toml_comps = crate::lsp::get_standard_toml_completions("edi");
+        let toml_labels: Vec<&str> = toml_comps.iter().map(|c| c.label.as_str()).collect();
+        assert!(toml_labels.contains(&"[editor]"));
+        assert!(toml_labels.contains(&"edition"));
+        assert!(!toml_labels.contains(&"String"));
+
+        let theme_comps = crate::lsp::get_standard_toml_completions("theme");
+        let theme_labels: Vec<&str> = theme_comps.iter().map(|c| c.label.as_str()).collect();
+        assert!(theme_labels.contains(&"theme"));
+    }
+
+    #[test]
+    fn test_havax_config_paths() {
+        let default_cfg = Config::default_config_path();
+        let path_str = default_cfg.display().to_string();
+        assert!(
+            path_str.contains("havax"),
+            "Default config path should target havax: {}",
+            path_str
+        );
     }
 }

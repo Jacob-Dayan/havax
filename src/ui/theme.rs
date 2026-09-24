@@ -651,10 +651,12 @@ impl Theme {
         if let Ok(home) = std::env::var("HOME").or_else(|_| std::env::var("USERPROFILE")) {
             let home_path = std::path::PathBuf::from(home);
             search_dirs.push(home_path.join(".config/havax/themes"));
+            search_dirs.push(home_path.join(".havax/themes"));
             search_dirs.push(home_path.join(".config/helix/themes"));
             search_dirs.push(home_path.join(".helix/themes"));
         }
         if let Ok(cur) = std::env::current_dir() {
+            search_dirs.push(cur.join(".havax/themes"));
             search_dirs.push(cur.join(".helix/themes"));
             search_dirs.push(cur.join("themes"));
         }

@@ -450,17 +450,40 @@ fn walk_tree_node(
     let kind = node.kind();
 
     let mut specific_color = match kind {
-        "line_comment" | "block_comment" => Some(theme.comment),
-        "string_literal" | "raw_string_literal" | "char_literal" => Some(theme.string),
-        "integer_literal" | "float_literal" => Some(theme.number),
-        "boolean_literal" => Some(theme.keyword),
-        "attribute_item" | "inner_attribute_item" => Some(theme.attribute),
+        "line_comment" | "block_comment" | "comment" => Some(theme.comment),
+        "string_literal"
+        | "raw_string_literal"
+        | "char_literal"
+        | "string"
+        | "basic_string"
+        | "multiline_basic_string"
+        | "literal_string"
+        | "multiline_literal_string" => Some(theme.string),
+        "integer_literal"
+        | "float_literal"
+        | "integer"
+        | "float"
+        | "dec_int"
+        | "hex_int"
+        | "oct_int"
+        | "bin_int"
+        | "local_date"
+        | "local_time"
+        | "local_date_time"
+        | "offset_date_time" => Some(theme.number),
+        "boolean_literal" | "boolean" => Some(theme.keyword),
+        "attribute_item"
+        | "inner_attribute_item"
+        | "table_header"
+        | "table_header_element"
+        | "array_of_tables_header" => Some(theme.attribute),
         "type_identifier" | "primitive_type" => Some(theme.r#type),
         "lifetime" => Some(theme.lifetime),
+        "bare_key" | "quoted_key" | "dotted_key" | "key" => Some(theme.function),
         _ => {
-            if is_rust_keyword(kind) {
+            if is_rust_keyword(kind) || kind == "true" || kind == "false" {
                 Some(theme.keyword)
-            } else if is_rust_operator(kind) {
+            } else if is_rust_operator(kind) || kind == "=" || kind == "." || kind == "," {
                 Some(theme.operator)
             } else {
                 None
@@ -524,11 +547,22 @@ fn walk_tree_node(
             kind,
             "line_comment"
                 | "block_comment"
+                | "comment"
                 | "string_literal"
                 | "raw_string_literal"
                 | "char_literal"
+                | "string"
+                | "basic_string"
+                | "multiline_basic_string"
+                | "literal_string"
+                | "multiline_literal_string"
                 | "attribute_item"
                 | "inner_attribute_item"
+                | "table_header"
+                | "table_header_element"
+                | "array_of_tables_header"
+                | "bare_key"
+                | "quoted_key"
         ) {
             return;
         }
@@ -546,15 +580,8 @@ pub fn highlight_line_treesitter(
     line_idx: usize,
     line: &str,
     theme: &Theme,
-    is_rust: bool,
+    lang: &str,
 ) -> Vec<(char, Color)> {
-    if !is_rust {
-        if let Some(p) = path {
-            return tokenize_preview_line(p, line);
-        }
-        return line.chars().map(|c| (c, theme.fg)).collect();
-    }
-
     let chars: Vec<char> = line.chars().collect();
     if chars.is_empty() {
         return Vec::new();
@@ -588,7 +615,11 @@ pub fn highlight_line_treesitter(
         }
 
         chars.into_iter().zip(colors).collect()
-    } else {
+    } else if lang == "rust" {
         tokenize_rust_line(line)
+    } else if let Some(p) = path {
+        tokenize_preview_line(p, line)
+    } else {
+        chars.into_iter().map(|c| (c, theme.fg)).collect()
     }
 }

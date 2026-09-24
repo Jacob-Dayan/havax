@@ -170,6 +170,16 @@ impl Config {
     }
 
     pub fn default_config_path() -> PathBuf {
+        if let Ok(home) = std::env::var("HOME").or_else(|_| std::env::var("USERPROFILE")) {
+            let config_havax = PathBuf::from(&home).join(".config/havax/config.toml");
+            if config_havax.exists() {
+                return config_havax;
+            }
+            let dot_havax = PathBuf::from(&home).join(".havax/config.toml");
+            if dot_havax.exists() {
+                return dot_havax;
+            }
+        }
         Self::config_dir().join("config.toml")
     }
 
