@@ -175,6 +175,8 @@ impl Editor {
             "w" | "write" => {
                 if parts.len() > 1 {
                     self.buf_mut().path = PathBuf::from(parts[1]);
+                    self.buf_mut().reparse();
+                    self.notify_lsp_open();
                 }
                 self.save_current()?;
             }
@@ -186,9 +188,28 @@ impl Editor {
                 }
             }
             "q!" | "quit!" => return Ok(false),
-            "wq" | "x" => {
+            "wq" | "write-quit" | "x" => {
+                if parts.len() > 1 {
+                    self.buf_mut().path = PathBuf::from(parts[1]);
+                    self.buf_mut().reparse();
+                    self.notify_lsp_open();
+                }
+                if self.buf().path.as_os_str().is_empty()
+                    || self.buf().path.to_string_lossy() == "scratch"
+                {
+                    self.set_status("No file name. Use :w <PATH> to save.", true);
+                    return Ok(true);
+                }
                 self.save_current()?;
                 return Ok(false);
+            }
+            "new" => {
+                let path = if parts.len() > 1 {
+                    Some(PathBuf::from(parts[1]))
+                } else {
+                    None
+                };
+                self.new_buffer(path)?;
             }
             // Buffer and Directory Opening (Helix)
             "o" | "open" | "e" | "edit" => {
@@ -486,6 +507,7 @@ pub const ALL_COMMANDS: &[&str] = &[
     "lsp-restart",
     "lsp-stop",
     "lsp-workspace-command",
+    "new",
     "o",
     "open",
     "pwd",
@@ -535,4 +557,3 @@ pub fn get_command_completions(input: &str) -> Vec<&'static str> {
 
     results
 }
-

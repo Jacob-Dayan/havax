@@ -1513,4 +1513,75 @@ inherits = "catppuccin_mocha"
         );
         assert_eq!(editor.command_buffer, "config-reload");
     }
+
+    #[test]
+    fn test_command_new_buffer_and_write_path() {
+        let b1 = Buffer::new(PathBuf::from("initial.rs")).unwrap();
+        let mut editor = Editor {
+            buffers: vec![b1],
+            current_buffer: 0,
+            mode: types::Mode::Command,
+            goto_return_mode: types::Mode::Normal,
+            match_return_mode: types::Mode::Normal,
+            match_state: types::MatchState::Menu,
+            clipboard: String::new(),
+            command_buffer: "new".to_string(),
+            command_prefix: None,
+            command_completion_idx: 0,
+            status_message: None,
+            file_picker: None,
+            stdout: std::io::stdout(),
+            config: Config::default(),
+            config_path: None,
+            theme: Theme::default(),
+            lsp: None,
+            completion: crate::completion::CompletionMenu::new(),
+            lsp_doc_version: 1,
+            pending_c: false,
+        };
+
+        // Execute :new
+        let res = editor.execute_command();
+        assert!(res.is_ok());
+        assert_eq!(editor.buffers.len(), 2);
+        assert_eq!(editor.current_buffer, 1);
+        assert!(editor.buf().path.as_os_str().is_empty());
+        assert_eq!(
+            editor.status_message.as_ref().map(|s| s.0.as_str()),
+            Some("New empty buffer. Use :w <PATH> to save.")
+        );
+
+        // Edit the new buffer
+        editor.buf_mut().lines = vec!["fn new_code() {}".to_string()];
+        editor.buf_mut().modified = true;
+
+        // Attempt :w without a path on the unnamed buffer
+        editor.command_buffer = "w".to_string();
+        let _ = editor.execute_command();
+        assert!(editor.buf().modified);
+        assert_eq!(
+            editor.status_message.as_ref().map(|s| s.0.as_str()),
+            Some("No file name. Use :w <PATH> to save.")
+        );
+
+        // Save with :w <PATH>
+        let test_target = PathBuf::from("target/test_new_cmd_output.rs");
+        if test_target.exists() {
+            let _ = std::fs::remove_file(&test_target);
+        }
+        editor.command_buffer = format!("w {}", test_target.display());
+        let res_save = editor.execute_command();
+        assert!(res_save.is_ok());
+        assert_eq!(editor.buf().path, test_target);
+        assert!(!editor.buf().modified);
+        assert!(test_target.exists());
+
+        let read_back = std::fs::read_to_string(&test_target).unwrap();
+        assert_eq!(read_back, "fn new_code() {}");
+        let _ = std::fs::remove_file(&test_target);
+
+        // Verify completion includes "new"
+        let completions = crate::editor::commands::get_command_completions("ne");
+        assert!(completions.contains(&"new"));
+    }
 }

@@ -147,6 +147,10 @@ impl Editor {
 
     pub fn save_current(&mut self) -> Result<(), Box<dyn Error>> {
         let buf = self.buf_mut();
+        if buf.path.as_os_str().is_empty() || buf.path.to_string_lossy() == "scratch" {
+            self.set_status("No file name. Use :w <PATH> to save.", true);
+            return Ok(());
+        }
         let content = buf.lines.join("\n");
         fs::write(&buf.path, content)?;
         buf.modified = false;
@@ -386,6 +390,21 @@ impl Editor {
         self.current_buffer = self.buffers.len() - 1;
         self.notify_lsp_open();
         self.set_status(&format!("Opened buffer [{}]", path.display()), false);
+        Ok(())
+    }
+
+    pub fn new_buffer(&mut self, path: Option<PathBuf>) -> Result<(), Box<dyn Error>> {
+        let p = path.unwrap_or_default();
+        let is_unnamed = p.as_os_str().is_empty();
+        let new_buf = Buffer::new(p.clone())?;
+        self.buffers.push(new_buf);
+        self.current_buffer = self.buffers.len() - 1;
+        if is_unnamed {
+            self.set_status("New empty buffer. Use :w <PATH> to save.", false);
+        } else {
+            self.notify_lsp_open();
+            self.set_status(&format!("Opened buffer [{}]", p.display()), false);
+        }
         Ok(())
     }
 

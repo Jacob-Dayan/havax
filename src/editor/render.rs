@@ -21,13 +21,7 @@ impl Editor {
 
         let show_tab_bar = match self.config.editor.bufferline {
             Bufferline::Always => true,
-            Bufferline::Multiple => {
-                self.buffers
-                    .iter()
-                    .filter(|b| !b.path.as_os_str().is_empty())
-                    .count()
-                    > 1
-            }
+            Bufferline::Multiple => self.buffers.len() > 1,
             Bufferline::Never => false,
         };
 
@@ -68,9 +62,11 @@ impl Editor {
                     .file_name()
                     .unwrap_or(b.path.as_os_str())
                     .to_string_lossy();
-                if fname.is_empty() || fname == "scratch" {
-                    continue;
-                }
+                let display_title = if fname.is_empty() || fname == "scratch" {
+                    "[scratch]"
+                } else {
+                    &fname
+                };
                 let is_active = i == self.current_buffer;
                 let (bg, fg) = if is_active {
                     (self.theme.badge_goto_bg, self.theme.badge_text)
@@ -79,7 +75,7 @@ impl Editor {
                 };
                 execute!(self.stdout, SetBackgroundColor(bg), SetForegroundColor(fg))?;
                 let mod_flag = if b.modified { " [+]" } else { "" };
-                let tab_text = format!(" {}: {fname}{mod_flag} ", i + 1);
+                let tab_text = format!(" {}: {display_title}{mod_flag} ", i + 1);
                 write!(self.stdout, "{tab_text}")?;
                 tab_x += tab_text.len();
             }

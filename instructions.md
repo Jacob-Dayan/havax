@@ -19,7 +19,7 @@ cargo build
 # Run
 cargo run -- [OPTIONS] [FILES]...
 
-# Test (37 unit tests)
+# Test (38 unit tests)
 cargo test
 
 # Lint
@@ -235,6 +235,12 @@ hidden = false
 - Added distinct `one-dark` (Atom), `gruvbox-dark`, and `one-half-light` themes
 - Broke `one-dark` / `one-half-dark` aliasing (they're now separate themes)
 
+### Phase 11 — New Buffer Workflow
+- Added `:new` command: opens an empty unnamed buffer and switches to it
+- Unnamed buffers display as `[scratch]` in top bufferline tabs and statusline
+- Guarded `:w` against unnamed buffers without paths (`"No file name. Use :w <PATH> to save."`)
+- `:w <PATH>` sets buffer path, re-parses Tree-sitter AST, and saves to disk
+
 ---
 
 ## Testing
@@ -243,10 +249,10 @@ hidden = false
 cargo test
 ```
 
-37 tests covering:
+38 tests covering:
 - CLI argument parsing and `-a` directory scanning
 - TOML configuration deserialization
-- All command-mode commands (`:pwd`, `:cd`, `:set-language`, `:config-open`, `:config-reload`)
+- All command-mode commands (`:new`, `:pwd`, `:cd`, `:set-language`, `:config-open`, `:config-reload`)
 - Visual mode motions (`vgl`)
 - Word/back-word motions with selection marking
 - Match mode (brackets, surround, select around/inside)

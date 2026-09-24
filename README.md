@@ -278,6 +278,7 @@ Automatically catches `Ctrl+Backspace` on Windows and `Alt+Backspace` / `Ctrl+W`
 
 | Command | Action |
 | :--- | :--- |
+| `:new` / `:new [path]` | Open a new empty buffer and wait for `:w <PATH>` to save |
 | `:o [path]` / `:open [path]` | Open file in buffer or directory in picker |
 | `:bn` / `:bnext` | Go to next buffer |
 | `:bp` / `:bprev` | Go to previous buffer |
