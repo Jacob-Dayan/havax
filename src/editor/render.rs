@@ -96,7 +96,7 @@ impl Editor {
 
         // --- Render Editor Content ---
         let current_buf = &mut self.buffers[self.current_buffer];
-        if current_buf.tree.is_none() {
+        if current_buf.needs_reparse || current_buf.tree.is_none() {
             current_buf.reparse();
         }
 

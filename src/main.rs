@@ -330,7 +330,8 @@ mod tests {
 
     #[test]
     fn test_directory_file_picker() {
-        let mut picker = FilePicker::new(PathBuf::from("."));
+        let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+        let mut picker = FilePicker::new(manifest_dir);
         assert!(!picker.all_files.is_empty());
         // Verify Cargo.toml exists in repository files
         assert!(picker.all_files.iter().any(|f| f == "Cargo.toml"));
@@ -338,7 +339,7 @@ mod tests {
         picker.filter_text = "main".to_string();
         picker.refilter();
         assert!(picker.filtered_files.iter().any(|f| f == "src/main.rs"));
-        assert!(picker.preview_lines.len() > 0);
+        assert!(!picker.preview_lines.is_empty());
     }
 
     #[test]
@@ -1752,4 +1753,168 @@ inherits = "catppuccin_mocha"
         );
         assert_eq!(editor.buf().lines[0], "hello changed test");
     }
+
+    #[test]
+    fn test_keyword_completions_and_fuzzy_matching() {
+        // 1. Keyword completions
+        let let_comps = crate::lsp::get_standard_rust_completions("le");
+        let let_item = let_comps.iter().find(|c| c.label == "let");
+        assert!(let_item.is_some());
+        assert_eq!(let_item.unwrap().kind_name, "keyword");
+
+        let fn_comps = crate::lsp::get_standard_rust_completions("fn");
+        assert!(fn_comps.iter().any(|c| c.label == "fn" && c.kind_name == "keyword"));
+
+        let mut_comps = crate::lsp::get_standard_rust_completions("mut");
+        assert!(mut_comps.iter().any(|c| c.label == "mut" && c.kind_name == "keyword"));
+
+        let match_comps = crate::lsp::get_standard_rust_completions("mat");
+        assert!(match_comps.iter().any(|c| c.label == "match" && c.kind_name == "keyword"));
+
+        // 2. Multi-part / acronym fuzzy matching for BufWriter
+        let writebu_comps = crate::lsp::get_standard_rust_completions("WriteBu");
+        assert!(writebu_comps.iter().any(|c| c.label == "BufWriter"));
+
+        let bw_comps = crate::lsp::get_standard_rust_completions("BW");
+        assert!(bw_comps.iter().any(|c| c.label == "BufWriter"));
+
+        let hm_comps = crate::lsp::get_standard_rust_completions("HM");
+        assert!(hm_comps.iter().any(|c| c.label == "HashMap"));
+    }
+
+    #[test]
+    fn test_auto_import_insertion_on_completion_acceptance() {
+        let path = PathBuf::from("test_auto_import.rs");
+        let mut buf = Buffer::new(path.clone()).unwrap();
+        buf.lines = vec![
+            "fn main() {".to_string(),
+            "    let buffer = WriteBu".to_string(),
+            "}".to_string(),
+        ];
+        buf.cursor = types::Position { row: 1, col: 24 };
+        buf.anchor = buf.cursor;
+        buf.language = Some("rust".to_string());
+        buf.reparse();
+
+        let mut editor = editor::Editor {
+            buffers: vec![buf],
+            current_buffer: 0,
+            mode: types::Mode::Insert,
+            theme: ui::theme::Theme::one_dark(),
+            config: config::Config::default(),
+            stdout: std::io::stdout(),
+            command_buffer: String::new(),
+            status_message: None,
+            clipboard: String::new(),
+            goto_return_mode: types::Mode::Normal,
+            match_state: types::MatchState::Menu,
+            match_return_mode: types::Mode::Normal,
+            pending_c: false,
+            file_picker: None,
+            lsp: None,
+            toml_lsp: None,
+            completion: lsp::completion::CompletionMenu::new(),
+            lsp_doc_version: 1,
+            command_prefix: None,
+            command_completion_idx: 0,
+            config_path: None,
+        };
+
+        // Trigger completion for "WriteBu"
+        editor.trigger_completion();
+        assert!(editor.completion.visible);
+
+        // Select BufWriter
+        let bufwriter_idx = editor
+            .completion
+            .items
+            .iter()
+            .position(|it| it.label == "BufWriter")
+            .expect("BufWriter must be in completions");
+        editor.completion.selected_idx = bufwriter_idx;
+
+        // Accept completion
+        editor.accept_completion();
+
+        // Verify:
+        // 1. Line 0 has `use std::io::BufWriter;`
+        // 2. Line 2 has `    let buffer = BufWriter`
+        // 3. Cursor is preserved on the line being edited (row 2)
+        assert_eq!(editor.buf().lines[0], "use std::io::BufWriter;");
+        assert_eq!(editor.buf().lines[2], "    let buffer = BufWriter");
+        assert_eq!(editor.buf().cursor.row, 2);
+
+        // Test with existing use statement to ensure order and no duplicate
+        let mut buf2 = Buffer::new(path).unwrap();
+        buf2.lines = vec![
+            "use std::fs::File;".to_string(),
+            "".to_string(),
+            "fn main() {".to_string(),
+            "    let buffer = WriteBu".to_string(),
+            "}".to_string(),
+        ];
+        buf2.cursor = types::Position { row: 3, col: 24 };
+        buf2.anchor = buf2.cursor;
+        buf2.language = Some("rust".to_string());
+        buf2.reparse();
+
+        editor.buffers = vec![buf2];
+        editor.trigger_completion();
+        let bw_idx = editor
+            .completion
+            .items
+            .iter()
+            .position(|it| it.label == "BufWriter")
+            .expect("BufWriter must be present");
+        editor.completion.selected_idx = bw_idx;
+        editor.accept_completion();
+
+        assert_eq!(editor.buf().lines[0], "use std::fs::File;");
+        assert_eq!(editor.buf().lines[1], "use std::io::BufWriter;");
+        assert_eq!(editor.buf().lines[4], "    let buffer = BufWriter");
+    }
+
+    #[test]
+    fn test_live_syntax_highlighting_and_deletion_reparse() {
+        let path = PathBuf::from("test_live_highlight.rs");
+        let mut buf = Buffer::new(path.clone()).unwrap();
+        buf.lines = vec![
+            "fn first() {}".to_string(),
+            "fn second() {}".to_string(),
+            "fn third() {}".to_string(),
+        ];
+        buf.reparse();
+        assert!(!buf.needs_reparse);
+
+        // Delete line 0 (first)
+        buf.cursor = types::Position { row: 0, col: 0 };
+        buf.anchor = types::Position { row: 0, col: 13 };
+        let mut dummy = String::new();
+        buf.delete_selection(&mut dummy);
+
+        // Buffer must indicate that reparse is needed
+        assert!(buf.needs_reparse);
+        buf.reparse();
+
+        // Row 0 is now "fn second() {}"
+        assert_eq!(buf.lines[0], "fn second() {}");
+
+        // Highlighting for row 0 must correctly find `fn` (keyword) and `second` (function)
+        let theme = ui::theme::Theme::one_dark();
+        let highlighted = syntax::highlight_line_treesitter(
+            buf.tree.as_ref(),
+            Some(&path),
+            0,
+            &buf.lines[0],
+            &theme,
+            "rust",
+        );
+        let highlighted_chars: String = highlighted.iter().map(|(c, _)| *c).collect();
+        assert_eq!(highlighted_chars, "fn second() {}");
+
+        // 'f' and 'n' should be keyword color
+        assert_eq!(highlighted[0].1, theme.keyword);
+        assert_eq!(highlighted[1].1, theme.keyword);
+    }
 }
+

@@ -885,22 +885,330 @@ fn get_node_text(node: tree_sitter::Node, lines: &[String]) -> String {
     }
 }
 
-/// Fallback / curated list of standard Rust completion items (matching the exact items in Helix and rust-analyzer)
+pub fn split_camel_case_or_words(s: &str) -> Vec<String> {
+    let mut parts = Vec::new();
+    let mut current = String::new();
+    for c in s.chars() {
+        if c == '_' || c == '-' || c == ' ' || c == ':' || c == '.' || c == '!' {
+            if !current.is_empty() {
+                parts.push(current.to_lowercase());
+                current.clear();
+            }
+        } else if c.is_uppercase() {
+            if !current.is_empty() {
+                parts.push(current.to_lowercase());
+                current.clear();
+            }
+            current.push(c);
+        } else {
+            current.push(c);
+        }
+    }
+    if !current.is_empty() {
+        parts.push(current.to_lowercase());
+    }
+    parts
+}
+
+pub fn fuzzy_match_score(query: &str, candidate: &str) -> Option<u32> {
+    let q = query.trim();
+    if q.is_empty() {
+        return Some(0);
+    }
+    let q_lower = q.to_lowercase();
+    let c_lower = candidate.to_lowercase();
+
+    if c_lower == q_lower {
+        return Some(100);
+    }
+    if c_lower.starts_with(&q_lower) {
+        return Some(90);
+    }
+    if c_lower.contains(&q_lower) {
+        return Some(75);
+    }
+    if is_subsequence(&q_lower, &c_lower) {
+        return Some(60);
+    }
+
+    // Check camelcase / multi-part matching (e.g. "WriteBu" -> parts: ["write", "bu"] in "bufwriter")
+    let q_parts = split_camel_case_or_words(q);
+    if q_parts.len() > 1 {
+        let all_parts_found = q_parts.iter().all(|part| c_lower.contains(part));
+        if all_parts_found {
+            return Some(55);
+        }
+    }
+
+    // Check acronym matching (e.g. "BW" -> "BufWriter", "PB" -> "PathBuf")
+    let c_parts = split_camel_case_or_words(candidate);
+    let acronym: String = c_parts.iter().filter_map(|p| p.chars().next()).collect();
+    if !acronym.is_empty() && (acronym.starts_with(&q_lower) || acronym == q_lower) {
+        return Some(65);
+    }
+
+    None
+}
+
+pub fn get_auto_import_for_item(label: &str, detail: Option<&str>) -> Option<String> {
+    // 1. If detail contains "(use <path>)", extract path
+    if let Some(d) = detail
+        && let Some(start) = d.find("(use ") {
+            let rem = &d[start + 5..];
+            if let Some(end) = rem.find(')') {
+                let path = rem[..end].trim().to_string();
+                if !path.is_empty() {
+                    return Some(path);
+                }
+            }
+        }
+
+    // 2. Known standard Rust symbol mapping
+    let clean_label = label.trim_end_matches("!(...)").trim_end_matches("![...]");
+    match clean_label {
+        "BufWriter" => Some("std::io::BufWriter".to_string()),
+        "BufReader" => Some("std::io::BufReader".to_string()),
+        "LineWriter" => Some("std::io::LineWriter".to_string()),
+        "Write" => Some("std::io::Write".to_string()),
+        "Read" => Some("std::io::Read".to_string()),
+        "BufRead" => Some("std::io::BufRead".to_string()),
+        "Seek" => Some("std::io::Seek".to_string()),
+        "Cursor" => Some("std::io::Cursor".to_string()),
+        "stdin" => Some("std::io::stdin".to_string()),
+        "stdout" => Some("std::io::stdout".to_string()),
+        "stderr" => Some("std::io::stderr".to_string()),
+        "File" => Some("std::fs::File".to_string()),
+        "OpenOptions" => Some("std::fs::OpenOptions".to_string()),
+        "DirEntry" => Some("std::fs::DirEntry".to_string()),
+        "ReadDir" => Some("std::fs::ReadDir".to_string()),
+        "Metadata" => Some("std::fs::Metadata".to_string()),
+        "Permissions" => Some("std::fs::Permissions".to_string()),
+        "read_to_string" => Some("std::fs::read_to_string".to_string()),
+        "read_dir" => Some("std::fs::read_dir".to_string()),
+        "create_dir" => Some("std::fs::create_dir".to_string()),
+        "create_dir_all" => Some("std::fs::create_dir_all".to_string()),
+        "remove_file" => Some("std::fs::remove_file".to_string()),
+        "remove_dir" => Some("std::fs::remove_dir".to_string()),
+        "remove_dir_all" => Some("std::fs::remove_dir_all".to_string()),
+        "canonicalize" => Some("std::fs::canonicalize".to_string()),
+        "Path" => Some("std::path::Path".to_string()),
+        "PathBuf" => Some("std::path::PathBuf".to_string()),
+        "HashMap" => Some("std::collections::HashMap".to_string()),
+        "HashSet" => Some("std::collections::HashSet".to_string()),
+        "BTreeMap" => Some("std::collections::BTreeMap".to_string()),
+        "BTreeSet" => Some("std::collections::BTreeSet".to_string()),
+        "VecDeque" => Some("std::collections::VecDeque".to_string()),
+        "BinaryHeap" => Some("std::collections::BinaryHeap".to_string()),
+        "LinkedList" => Some("std::collections::LinkedList".to_string()),
+        "Command" => Some("std::process::Command".to_string()),
+        "Child" => Some("std::process::Child".to_string()),
+        "ChildStdin" => Some("std::process::ChildStdin".to_string()),
+        "ChildStdout" => Some("std::process::ChildStdout".to_string()),
+        "ExitStatus" => Some("std::process::ExitStatus".to_string()),
+        "Stdio" => Some("std::process::Stdio".to_string()),
+        "Duration" => Some("std::time::Duration".to_string()),
+        "Instant" => Some("std::time::Instant".to_string()),
+        "SystemTime" => Some("std::time::SystemTime".to_string()),
+        "Arc" => Some("std::sync::Arc".to_string()),
+        "Mutex" => Some("std::sync::Mutex".to_string()),
+        "RwLock" => Some("std::sync::RwLock".to_string()),
+        "MutexGuard" => Some("std::sync::MutexGuard".to_string()),
+        "RwLockReadGuard" => Some("std::sync::RwLockReadGuard".to_string()),
+        "RwLockWriteGuard" => Some("std::sync::RwLockWriteGuard".to_string()),
+        "Barrier" => Some("std::sync::Barrier".to_string()),
+        "Condvar" => Some("std::sync::Condvar".to_string()),
+        "Once" => Some("std::sync::Once".to_string()),
+        "OnceLock" => Some("std::sync::OnceLock".to_string()),
+        "Weak" => Some("std::sync::Weak".to_string()),
+        "AtomicBool" => Some("std::sync::atomic::AtomicBool".to_string()),
+        "AtomicUsize" => Some("std::sync::atomic::AtomicUsize".to_string()),
+        "AtomicI64" => Some("std::sync::atomic::AtomicI64".to_string()),
+        "AtomicI32" => Some("std::sync::atomic::AtomicI32".to_string()),
+        "AtomicU64" => Some("std::sync::atomic::AtomicU64".to_string()),
+        "AtomicU32" => Some("std::sync::atomic::AtomicU32".to_string()),
+        "AtomicPtr" => Some("std::sync::atomic::AtomicPtr".to_string()),
+        "Ordering" => Some("std::sync::atomic::Ordering".to_string()),
+        "Cell" => Some("std::cell::Cell".to_string()),
+        "RefCell" => Some("std::cell::RefCell".to_string()),
+        "Rc" => Some("std::rc::Rc".to_string()),
+        "OsStr" => Some("std::ffi::OsStr".to_string()),
+        "OsString" => Some("std::ffi::OsString".to_string()),
+        "CString" => Some("std::ffi::CString".to_string()),
+        "CStr" => Some("std::ffi::CStr".to_string()),
+        "Display" => Some("std::fmt::Display".to_string()),
+        "Debug" => Some("std::fmt::Debug".to_string()),
+        "Formatter" => Some("std::fmt::Formatter".to_string()),
+        "thread" => Some("std::thread".to_string()),
+        "spawn" => Some("std::thread::spawn".to_string()),
+        "JoinHandle" => Some("std::thread::JoinHandle".to_string()),
+        "Error" => Some("std::error::Error".to_string()),
+        "TcpStream" => Some("std::net::TcpStream".to_string()),
+        "TcpListener" => Some("std::net::TcpListener".to_string()),
+        "UdpSocket" => Some("std::net::UdpSocket".to_string()),
+        "SocketAddr" => Some("std::net::SocketAddr".to_string()),
+        "IpAddr" => Some("std::net::IpAddr".to_string()),
+        "Ipv4Addr" => Some("std::net::Ipv4Addr".to_string()),
+        "Ipv6Addr" => Some("std::net::Ipv6Addr".to_string()),
+        "Pin" => Some("std::pin::Pin".to_string()),
+        "Future" => Some("std::future::Future".to_string()),
+        _ => None,
+    }
+}
+
+/// Fallback / curated list of standard Rust completion items (matching Helix, rust-analyzer, and all keywords)
 pub fn get_standard_rust_completions(prefix: &str) -> Vec<CompletionItem> {
     let standard_items = [
+        // Keywords
+        ("let", "keyword", Some("keyword let"), "let"),
+        ("mut", "keyword", Some("keyword mut"), "mut"),
+        ("fn", "keyword", Some("keyword fn"), "fn"),
+        ("struct", "keyword", Some("keyword struct"), "struct"),
+        ("enum", "keyword", Some("keyword enum"), "enum"),
+        ("impl", "keyword", Some("keyword impl"), "impl"),
+        ("trait", "keyword", Some("keyword trait"), "trait"),
+        ("pub", "keyword", Some("keyword pub"), "pub"),
+        ("use", "keyword", Some("keyword use"), "use"),
+        ("match", "keyword", Some("keyword match"), "match"),
+        ("if", "keyword", Some("keyword if"), "if"),
+        ("else", "keyword", Some("keyword else"), "else"),
+        ("while", "keyword", Some("keyword while"), "while"),
+        ("for", "keyword", Some("keyword for"), "for"),
+        ("loop", "keyword", Some("keyword loop"), "loop"),
+        ("return", "keyword", Some("keyword return"), "return"),
+        ("async", "keyword", Some("keyword async"), "async"),
+        ("await", "keyword", Some("keyword await"), "await"),
+        ("const", "keyword", Some("keyword const"), "const"),
+        ("static", "keyword", Some("keyword static"), "static"),
+        ("type", "keyword", Some("keyword type"), "type"),
+        ("where", "keyword", Some("keyword where"), "where"),
+        ("unsafe", "keyword", Some("keyword unsafe"), "unsafe"),
+        ("extern", "keyword", Some("keyword extern"), "extern"),
+        ("crate", "keyword", Some("keyword crate"), "crate"),
+        ("super", "keyword", Some("keyword super"), "super"),
+        ("self", "keyword", Some("keyword self"), "self"),
+        ("Self", "type", Some("Self type"), "Self"),
+        ("mod", "keyword", Some("keyword mod"), "mod"),
+        ("as", "keyword", Some("keyword as"), "as"),
+        ("dyn", "keyword", Some("keyword dyn"), "dyn"),
+        ("ref", "keyword", Some("keyword ref"), "ref"),
+        ("move", "keyword", Some("keyword move"), "move"),
+        ("break", "keyword", Some("keyword break"), "break"),
+        ("continue", "keyword", Some("keyword continue"), "continue"),
+        ("true", "keyword", Some("bool true"), "true"),
+        ("false", "keyword", Some("bool false"), "false"),
+        ("in", "keyword", Some("keyword in"), "in"),
+        // Standard Types & Structs (with auto-import path details)
+        ("BufWriter", "struct", Some("(use std::io::BufWriter)"), "BufWriter"),
+        ("BufReader", "struct", Some("(use std::io::BufReader)"), "BufReader"),
+        ("LineWriter", "struct", Some("(use std::io::LineWriter)"), "LineWriter"),
+        ("Write", "interface", Some("(use std::io::Write)"), "Write"),
+        ("Read", "interface", Some("(use std::io::Read)"), "Read"),
+        ("BufRead", "interface", Some("(use std::io::BufRead)"), "BufRead"),
+        ("Seek", "interface", Some("(use std::io::Seek)"), "Seek"),
+        ("Cursor", "struct", Some("(use std::io::Cursor)"), "Cursor"),
+        ("stdin", "function", Some("(use std::io::stdin)"), "stdin"),
+        ("stdout", "function", Some("(use std::io::stdout)"), "stdout"),
+        ("stderr", "function", Some("(use std::io::stderr)"), "stderr"),
+        ("File", "struct", Some("(use std::fs::File)"), "File"),
+        ("OpenOptions", "struct", Some("(use std::fs::OpenOptions)"), "OpenOptions"),
+        ("DirEntry", "struct", Some("(use std::fs::DirEntry)"), "DirEntry"),
+        ("ReadDir", "struct", Some("(use std::fs::ReadDir)"), "ReadDir"),
+        ("Metadata", "struct", Some("(use std::fs::Metadata)"), "Metadata"),
+        ("Permissions", "struct", Some("(use std::fs::Permissions)"), "Permissions"),
+        ("read_to_string", "function", Some("(use std::fs::read_to_string)"), "read_to_string"),
+        ("read_dir", "function", Some("(use std::fs::read_dir)"), "read_dir"),
+        ("create_dir", "function", Some("(use std::fs::create_dir)"), "create_dir"),
+        ("create_dir_all", "function", Some("(use std::fs::create_dir_all)"), "create_dir_all"),
+        ("remove_file", "function", Some("(use std::fs::remove_file)"), "remove_file"),
+        ("remove_dir", "function", Some("(use std::fs::remove_dir)"), "remove_dir"),
+        ("remove_dir_all", "function", Some("(use std::fs::remove_dir_all)"), "remove_dir_all"),
+        ("canonicalize", "function", Some("(use std::fs::canonicalize)"), "canonicalize"),
+        ("Path", "struct", Some("(use std::path::Path)"), "Path"),
+        ("PathBuf", "struct", Some("(use std::path::PathBuf)"), "PathBuf"),
+        ("HashMap", "struct", Some("(use std::collections::HashMap)"), "HashMap"),
+        ("HashSet", "struct", Some("(use std::collections::HashSet)"), "HashSet"),
+        ("BTreeMap", "struct", Some("(use std::collections::BTreeMap)"), "BTreeMap"),
+        ("BTreeSet", "struct", Some("(use std::collections::BTreeSet)"), "BTreeSet"),
+        ("VecDeque", "struct", Some("(use std::collections::VecDeque)"), "VecDeque"),
+        ("BinaryHeap", "struct", Some("(use std::collections::BinaryHeap)"), "BinaryHeap"),
+        ("LinkedList", "struct", Some("(use std::collections::LinkedList)"), "LinkedList"),
+        ("Command", "struct", Some("(use std::process::Command)"), "Command"),
+        ("Child", "struct", Some("(use std::process::Child)"), "Child"),
+        ("ChildStdin", "struct", Some("(use std::process::ChildStdin)"), "ChildStdin"),
+        ("ChildStdout", "struct", Some("(use std::process::ChildStdout)"), "ChildStdout"),
+        ("ExitStatus", "struct", Some("(use std::process::ExitStatus)"), "ExitStatus"),
+        ("Stdio", "struct", Some("(use std::process::Stdio)"), "Stdio"),
+        ("Duration", "struct", Some("(use std::time::Duration)"), "Duration"),
+        ("Instant", "struct", Some("(use std::time::Instant)"), "Instant"),
+        ("SystemTime", "struct", Some("(use std::time::SystemTime)"), "SystemTime"),
+        ("Arc", "struct", Some("(use std::sync::Arc)"), "Arc"),
+        ("Mutex", "struct", Some("(use std::sync::Mutex)"), "Mutex"),
+        ("RwLock", "struct", Some("(use std::sync::RwLock)"), "RwLock"),
+        ("MutexGuard", "struct", Some("(use std::sync::MutexGuard)"), "MutexGuard"),
+        ("RwLockReadGuard", "struct", Some("(use std::sync::RwLockReadGuard)"), "RwLockReadGuard"),
+        ("RwLockWriteGuard", "struct", Some("(use std::sync::RwLockWriteGuard)"), "RwLockWriteGuard"),
+        ("Barrier", "struct", Some("(use std::sync::Barrier)"), "Barrier"),
+        ("Condvar", "struct", Some("(use std::sync::Condvar)"), "Condvar"),
+        ("Once", "struct", Some("(use std::sync::Once)"), "Once"),
+        ("OnceLock", "struct", Some("(use std::sync::OnceLock)"), "OnceLock"),
+        ("Weak", "struct", Some("(use std::sync::Weak)"), "Weak"),
+        ("AtomicBool", "struct", Some("(use std::sync::atomic::AtomicBool)"), "AtomicBool"),
+        ("AtomicUsize", "struct", Some("(use std::sync::atomic::AtomicUsize)"), "AtomicUsize"),
+        ("AtomicI64", "struct", Some("(use std::sync::atomic::AtomicI64)"), "AtomicI64"),
+        ("AtomicI32", "struct", Some("(use std::sync::atomic::AtomicI32)"), "AtomicI32"),
+        ("AtomicU64", "struct", Some("(use std::sync::atomic::AtomicU64)"), "AtomicU64"),
+        ("AtomicU32", "struct", Some("(use std::sync::atomic::AtomicU32)"), "AtomicU32"),
+        ("AtomicPtr", "struct", Some("(use std::sync::atomic::AtomicPtr)"), "AtomicPtr"),
+        ("Ordering", "enum", Some("(use std::sync::atomic::Ordering)"), "Ordering"),
+        ("Cell", "struct", Some("(use std::cell::Cell)"), "Cell"),
+        ("RefCell", "struct", Some("(use std::cell::RefCell)"), "RefCell"),
+        ("Rc", "struct", Some("(use std::rc::Rc)"), "Rc"),
+        ("OsStr", "struct", Some("(use std::ffi::OsStr)"), "OsStr"),
+        ("OsString", "struct", Some("(use std::ffi::OsString)"), "OsString"),
+        ("CString", "struct", Some("(use std::ffi::CString)"), "CString"),
+        ("CStr", "struct", Some("(use std::ffi::CStr)"), "CStr"),
+        ("Display", "interface", Some("(use std::fmt::Display)"), "Display"),
+        ("Debug", "interface", Some("(use std::fmt::Debug)"), "Debug"),
+        ("Formatter", "struct", Some("(use std::fmt::Formatter)"), "Formatter"),
+        ("thread", "module", Some("(use std::thread)"), "thread"),
+        ("spawn", "function", Some("(use std::thread::spawn)"), "spawn"),
+        ("JoinHandle", "struct", Some("(use std::thread::JoinHandle)"), "JoinHandle"),
+        ("Error", "interface", Some("(use std::error::Error)"), "Error"),
+        ("TcpStream", "struct", Some("(use std::net::TcpStream)"), "TcpStream"),
+        ("TcpListener", "struct", Some("(use std::net::TcpListener)"), "TcpListener"),
+        ("UdpSocket", "struct", Some("(use std::net::UdpSocket)"), "UdpSocket"),
+        ("SocketAddr", "struct", Some("(use std::net::SocketAddr)"), "SocketAddr"),
+        ("IpAddr", "enum", Some("(use std::net::IpAddr)"), "IpAddr"),
+        ("Pin", "struct", Some("(use std::pin::Pin)"), "Pin"),
+        ("Future", "interface", Some("(use std::future::Future)"), "Future"),
+        // Built-in types and macros
         ("String", "struct", None, "String"),
+        ("str", "type", None, "str"),
+        ("std", "module", None, "std"),
+        ("Some", "enum_member", None, "Some"),
+        ("None", "enum_member", None, "None"),
+        ("Ok", "enum_member", None, "Ok"),
+        ("Err", "enum_member", None, "Err"),
+        ("Vec", "struct", None, "Vec"),
+        ("Option", "enum", None, "Option"),
+        ("Result", "enum", None, "Result"),
+        ("Box", "struct", None, "Box"),
+        ("ToString", "interface", None, "ToString"),
+        ("println!(...)", "function", None, "println!"),
+        ("eprintln!(...)", "function", None, "eprintln!"),
+        ("format!(...)", "function", None, "format!"),
+        ("panic!(...)", "function", None, "panic!"),
+        ("vec![...]", "function", None, "vec!"),
+        ("todo!(...)", "function", None, "todo!"),
+        ("unimplemented!(...)", "function", None, "unimplemented!"),
+        ("unreachable!(...)", "function", None, "unreachable!"),
+        ("matches!(...)", "function", None, "matches!"),
+        ("stringify!(...)", "function", None, "stringify!"),
         (
             "StringPattern(...)",
             "enum_member",
             Some("(use std::str::pattern::Utf8Pattern::StringPattern)"),
             "StringPattern",
-        ),
-        ("stringify!(...)", "function", None, "stringify!"),
-        (
-            "OsString",
-            "struct",
-            Some("(use std::ffi::OsString)"),
-            "OsString",
         ),
         (
             "ByteString",
@@ -908,7 +1216,6 @@ pub fn get_standard_rust_completions(prefix: &str) -> Vec<CompletionItem> {
             Some("(alias BString) (use std::bstr::ByteString)"),
             "ByteString",
         ),
-        ("ToString", "interface", None, "ToString"),
         (
             "OsStringExt",
             "interface",
@@ -933,119 +1240,26 @@ pub fn get_standard_rust_completions(prefix: &str) -> Vec<CompletionItem> {
             Some("(use std::str::SplitTerminator)"),
             "SplitTerminator",
         ),
-        ("str", "type", None, "str"),
-        ("std", "module", None, "std"),
-        ("struct", "keyword", None, "struct"),
-        ("static", "keyword", None, "static"),
-        ("Some", "enum_member", None, "Some"),
-        ("Self", "type", None, "Self"),
-        ("self", "keyword", None, "self"),
-        ("super", "keyword", None, "super"),
-        ("Vec", "struct", None, "Vec"),
-        ("Option", "enum", None, "Option"),
-        ("Result", "enum", None, "Result"),
-        ("Box", "struct", None, "Box"),
-        ("println!(...)", "function", None, "println!"),
-        ("eprintln!(...)", "function", None, "eprintln!"),
-        ("format!(...)", "function", None, "format!"),
-        ("panic!(...)", "function", None, "panic!"),
-        ("vec![...]", "function", None, "vec!"),
-        (
-            "HashMap",
-            "struct",
-            Some("(use std::collections::HashMap)"),
-            "HashMap",
-        ),
-        (
-            "HashSet",
-            "struct",
-            Some("(use std::collections::HashSet)"),
-            "HashSet",
-        ),
-        (
-            "BTreeMap",
-            "struct",
-            Some("(use std::collections::BTreeMap)"),
-            "BTreeMap",
-        ),
-        (
-            "BTreeSet",
-            "struct",
-            Some("(use std::collections::BTreeSet)"),
-            "BTreeSet",
-        ),
-        ("Path", "struct", Some("(use std::path::Path)"), "Path"),
-        (
-            "PathBuf",
-            "struct",
-            Some("(use std::path::PathBuf)"),
-            "PathBuf",
-        ),
-        ("File", "struct", Some("(use std::fs::File)"), "File"),
-        (
-            "read_to_string",
-            "function",
-            Some("(use std::fs::read_to_string)"),
-            "read_to_string",
-        ),
-        (
-            "Command",
-            "struct",
-            Some("(use std::process::Command)"),
-            "Command",
-        ),
-        (
-            "Duration",
-            "struct",
-            Some("(use std::time::Duration)"),
-            "Duration",
-        ),
-        (
-            "Instant",
-            "struct",
-            Some("(use std::time::Instant)"),
-            "Instant",
-        ),
-        ("Arc", "struct", Some("(use std::sync::Arc)"), "Arc"),
-        ("Mutex", "struct", Some("(use std::sync::Mutex)"), "Mutex"),
-        (
-            "RwLock",
-            "struct",
-            Some("(use std::sync::RwLock)"),
-            "RwLock",
-        ),
-        ("Cell", "struct", Some("(use std::cell::Cell)"), "Cell"),
-        (
-            "RefCell",
-            "struct",
-            Some("(use std::cell::RefCell)"),
-            "RefCell",
-        ),
-        ("Ok", "enum_member", None, "Ok"),
-        ("Err", "enum_member", None, "Err"),
-        ("None", "enum_member", None, "None"),
     ];
 
-    let p_lower = prefix.to_lowercase();
-    let mut results = Vec::new();
+    let mut scored_results: Vec<(u32, CompletionItem)> = Vec::new();
 
     for (label, kind, detail, insert) in standard_items {
-        let l_lower = label.to_lowercase();
-        if p_lower.is_empty()
-            || l_lower.starts_with(&p_lower)
-            || l_lower.contains(&p_lower)
-            || is_subsequence(&p_lower, &l_lower)
-        {
-            results.push(CompletionItem {
-                label: label.to_string(),
-                detail: detail.map(String::from),
-                kind_name: kind.to_string(),
-                insert_text: Some(insert.to_string()),
-            });
+        if let Some(score) = fuzzy_match_score(prefix, label) {
+            scored_results.push((
+                score,
+                CompletionItem {
+                    label: label.to_string(),
+                    detail: detail.map(String::from),
+                    kind_name: kind.to_string(),
+                    insert_text: Some(insert.to_string()),
+                },
+            ));
         }
     }
 
-    results
+    scored_results.sort_by_key(|a| std::cmp::Reverse(a.0));
+    scored_results.into_iter().map(|(_, item)| item).collect()
 }
 
 /// Curated list of standard TOML completion items (tables, properties, booleans, themes, cursor shapes)
@@ -1102,28 +1316,27 @@ pub fn get_standard_toml_completions(prefix: &str) -> Vec<CompletionItem> {
         ("\"one-half-light\"", "value", Some("One Half Light theme"), "\"one-half-light\""),
     ];
 
-    let p_lower = prefix.to_lowercase();
-    let mut results = Vec::new();
+    let mut scored_results: Vec<(u32, CompletionItem)> = Vec::new();
 
     for (label, kind, detail, insert) in standard_items {
-        let l_lower = label.to_lowercase();
-        if p_lower.is_empty()
-            || l_lower.starts_with(&p_lower)
-            || l_lower.contains(&p_lower)
-        {
-            results.push(CompletionItem {
-                label: label.to_string(),
-                detail: detail.map(String::from),
-                kind_name: kind.to_string(),
-                insert_text: Some(insert.to_string()),
-            });
+        if let Some(score) = fuzzy_match_score(prefix, label) {
+            scored_results.push((
+                score,
+                CompletionItem {
+                    label: label.to_string(),
+                    detail: detail.map(String::from),
+                    kind_name: kind.to_string(),
+                    insert_text: Some(insert.to_string()),
+                },
+            ));
         }
     }
 
-    results
+    scored_results.sort_by_key(|a| std::cmp::Reverse(a.0));
+    scored_results.into_iter().map(|(_, item)| item).collect()
 }
 
-fn is_subsequence(sub: &str, target: &str) -> bool {
+pub fn is_subsequence(sub: &str, target: &str) -> bool {
     let mut target_chars = target.chars();
     for sc in sub.chars() {
         if !target_chars.any(|tc| tc == sc) {

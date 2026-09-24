@@ -254,6 +254,13 @@ hidden = false
 - `<Ctrl+Left>` / `<Alt+Left>` skips whole word backward in Normal, Insert, and Visual modes
 - `<Ctrl+Right>` / `<Alt+Right>` skips whole word forward in Normal, Insert, and Visual modes
 
+### Phase 14 — Keyword Completions, Built-in Auto-Import & Live Syntax Highlight Refresh
+- **Keyword Completions**: Added all Rust keywords (`let`, `mut`, `fn`, `struct`, `enum`, `impl`, `trait`, `pub`, `use`, `match`, `if`, `else`, `while`, `for`, `loop`, `return`, `async`, `await`, `const`, `static`, etc.) to standard completions.
+- **Smart / Multi-part Fuzzy Matching**: Implemented `fuzzy_match_score` supporting camel-case part matching (e.g. `WriteBu` -> `BufWriter`), acronym matching (e.g. `BW` -> `BufWriter`, `HM` -> `HashMap`), prefix, substring, and subsequence matching.
+- **Built-in Auto-Import (`use` Insertion)**: When accepting a completion item for a standard library type/function/trait (e.g. `BufWriter`, `HashMap`, `PathBuf`, `File`, etc.), Havax automatically inserts `use <path>;` (e.g. `use std::io::BufWriter;`) at the top of the file without duplicates, keeping cursor alignment intact.
+- **Live Incremental Syntax Reparse**: Added `needs_reparse` tracking across all Buffer text modifications (insertion, deletion, backspace, undo, redo, paste, surround operations) so Tree-Sitter AST is immediately synchronized on every render, eliminating highlighting jumps and misalignment when deleting or editing lines.
+- **Live Tokenizer Fallback**: Blended AST highlighting with lexical tokenization for syntax fragments and `ERROR` nodes during typing so keywords (`let`, `fn`), numbers, strings, and operators are instantly colored in real-time.
+
 ---
 
 ## Testing
@@ -262,7 +269,7 @@ hidden = false
 cargo test
 ```
 
-41 tests covering:
+44 tests covering:
 - CLI argument parsing and `-a` directory scanning
 - TOML configuration deserialization & Havax config path resolution
 - All command-mode commands (`:new`, `:pwd`, `:cd`, `:set-language`, `:config-open`, `:config-reload`)
@@ -277,3 +284,6 @@ cargo test
 - Rainbow bracket nesting colors
 - Insert-mode completion keybindings (Tab/BackTab/Enter/Esc)
 - Redo (`<Shift+u>`) and `<Ctrl+Left/Right>` word navigation across modes
+- Keyword completions (`let`, `fn`, `mut`, `match`) and multi-part fuzzy matching (`WriteBu` -> `BufWriter`)
+- Built-in auto-import insertion on completion acceptance
+- Live syntax highlighting reparse and deletion stability

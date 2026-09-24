@@ -599,6 +599,23 @@ pub fn highlight_line_treesitter(
         let mut colors = vec![theme.fg; chars.len()];
         walk_tree_node(t.root_node(), line_idx, &char_spans, &mut colors, theme);
 
+        // Fallback blend for incomplete syntax / ERROR nodes / unhighlighted characters
+        if lang == "rust" {
+            let lex = tokenize_rust_line(line);
+            for (i, &(_, lex_color)) in lex.iter().enumerate().take(colors.len()) {
+                if colors[i] == theme.fg && lex_color != theme.fg {
+                    colors[i] = lex_color;
+                }
+            }
+        } else if let Some(p) = path {
+            let lex = tokenize_preview_line(p, line);
+            for (i, &(_, lex_color)) in lex.iter().enumerate().take(colors.len()) {
+                if colors[i] == theme.fg && lex_color != theme.fg {
+                    colors[i] = lex_color;
+                }
+            }
+        }
+
         // Apply Rainbow Bracket Highlighting on AST output
         let mut bracket_depth: usize = 0;
         for (i, &ch) in chars.iter().enumerate() {

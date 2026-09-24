@@ -227,6 +227,9 @@ impl Editor {
     }
 
     pub fn trigger_completion(&mut self) {
+        if self.buf().needs_reparse || self.buf().tree.is_none() {
+            self.buf_mut().reparse();
+        }
         let buf = self.buf();
         let row = buf.cursor.row;
         let col = buf.cursor.col;
@@ -306,10 +309,8 @@ impl Editor {
                 for word in l.split(|c: char| !c.is_alphanumeric() && c != '_' && c != '-') {
                     if !word.is_empty()
                         && word != filter_prefix
-                        && word
-                            .to_lowercase()
-                            .starts_with(&filter_prefix.to_lowercase())
                         && !general_items.iter().any(|it| it.label == word)
+                        && crate::lsp::fuzzy_match_score(&filter_prefix, word).is_some()
                     {
                         general_items.push(crate::lsp::CompletionItem {
                             label: word.to_string(),
@@ -357,13 +358,19 @@ impl Editor {
     }
 
     pub fn accept_completion(&mut self) {
-        if let Some(item) = self.completion.selected_item() {
+        if let Some(item) = self.completion.selected_item().cloned() {
             let insert_text = item
                 .insert_text
                 .as_deref()
                 .unwrap_or(&item.label)
                 .to_string();
             let trigger_col = self.completion.trigger_col;
+            let auto_import_opt = if self.buf().language() == "rust" {
+                crate::lsp::get_auto_import_for_item(&insert_text, item.detail.as_deref())
+            } else {
+                None
+            };
+
             let buf = self.buf_mut();
             let row = buf.cursor.row;
             if row < buf.lines.len() {
@@ -382,6 +389,47 @@ impl Editor {
                 buf.cursor.col = start_col + insert_chars.len();
                 buf.anchor = buf.cursor;
                 buf.modified = true;
+                buf.needs_reparse = true;
+
+                // Auto-import insertion if applicable
+                if let Some(import_path) = auto_import_opt {
+                    let short_name = import_path.split("::").last().unwrap_or(&import_path);
+                    let use_statement = format!("use {import_path};");
+                    let already_imported = buf.lines.iter().any(|l| {
+                        let trimmed = l.trim();
+                        trimmed.starts_with("use ")
+                            && (trimmed.contains(&import_path)
+                                || trimmed.contains(short_name)
+                                || trimmed.contains("::*"))
+                    });
+
+                    if !already_imported {
+                        // Find insertion point at head of file
+                        let mut insert_row = 0;
+                        let mut last_use_row = None;
+                        for (idx, line) in buf.lines.iter().enumerate() {
+                            let trimmed = line.trim();
+                            if trimmed.starts_with("use ") {
+                                last_use_row = Some(idx);
+                            } else if trimmed.starts_with("#![") || trimmed.starts_with("//!") {
+                                insert_row = idx + 1;
+                            }
+                        }
+
+                        let target_row = if let Some(use_idx) = last_use_row {
+                            use_idx + 1
+                        } else {
+                            insert_row
+                        };
+
+                        buf.lines.insert(target_row, use_statement);
+                        if target_row <= buf.cursor.row {
+                            buf.cursor.row += 1;
+                            buf.anchor.row += 1;
+                        }
+                        buf.needs_reparse = true;
+                    }
+                }
             }
         }
         self.completion.close();

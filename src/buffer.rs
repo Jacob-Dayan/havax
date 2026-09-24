@@ -16,6 +16,7 @@ pub struct Buffer {
     pub redo_stack: Vec<Vec<String>>,
     pub tree: Option<tree_sitter::Tree>,
     pub language: Option<String>,
+    pub needs_reparse: bool,
 }
 
 pub fn get_matching_pair(delim: char) -> (char, char) {
@@ -57,6 +58,7 @@ impl Buffer {
             redo_stack: Vec::new(),
             tree: None,
             language: None,
+            needs_reparse: true,
         };
         buf.reparse();
         Ok(buf)
@@ -84,6 +86,7 @@ impl Buffer {
     }
 
     pub fn reparse(&mut self) {
+        self.needs_reparse = false;
         let lang_name = self.language();
         if lang_name != "rust" && lang_name != "toml" {
             self.tree = None;
@@ -118,6 +121,7 @@ impl Buffer {
             self.clamp_cursor();
             self.anchor = self.cursor;
             self.modified = true;
+            self.needs_reparse = true;
             true
         } else {
             false
@@ -134,6 +138,7 @@ impl Buffer {
             self.clamp_cursor();
             self.anchor = self.cursor;
             self.modified = true;
+            self.needs_reparse = true;
             true
         } else {
             false
@@ -310,6 +315,7 @@ impl Buffer {
         self.anchor = start;
         self.clamp_cursor();
         self.modified = true;
+        self.needs_reparse = true;
     }
 
     #[allow(clippy::needless_range_loop)]
@@ -370,6 +376,7 @@ impl Buffer {
 
         self.anchor = self.cursor;
         self.modified = true;
+        self.needs_reparse = true;
     }
 
     pub fn paste_newline(&mut self, clipboard: &str) {
@@ -387,6 +394,7 @@ impl Buffer {
         self.cursor.col = 0;
         self.anchor = self.cursor;
         self.modified = true;
+        self.needs_reparse = true;
     }
 
     #[allow(clippy::needless_range_loop)]
@@ -432,6 +440,7 @@ impl Buffer {
 
         self.anchor = self.cursor;
         self.modified = true;
+        self.needs_reparse = true;
     }
 
     #[allow(clippy::needless_range_loop)]
@@ -467,6 +476,7 @@ impl Buffer {
             }
         }
         self.modified = true;
+        self.needs_reparse = true;
         all_commented
     }
 
@@ -628,6 +638,7 @@ impl Buffer {
         self.cursor.col += 1;
         self.anchor = self.cursor;
         self.modified = true;
+        self.needs_reparse = true;
     }
 
     pub fn insert_tab(&mut self) {
@@ -644,6 +655,7 @@ impl Buffer {
         self.cursor.col += spaces;
         self.anchor = self.cursor;
         self.modified = true;
+        self.needs_reparse = true;
     }
 
     pub fn insert_newline(&mut self) {
@@ -694,6 +706,7 @@ impl Buffer {
 
         self.anchor = self.cursor;
         self.modified = true;
+        self.needs_reparse = true;
     }
 
     pub fn delete_char(&mut self) {
@@ -715,6 +728,7 @@ impl Buffer {
             self.lines[self.cursor.row] = chars.into_iter().collect();
             self.anchor = self.cursor;
             self.modified = true;
+            self.needs_reparse = true;
         } else if self.cursor.row > 0 {
             let current_line = self.lines.remove(self.cursor.row);
             self.cursor.row -= 1;
@@ -723,6 +737,7 @@ impl Buffer {
             prev_line.push_str(&current_line);
             self.anchor = self.cursor;
             self.modified = true;
+            self.needs_reparse = true;
         }
     }
 
@@ -737,6 +752,7 @@ impl Buffer {
                 prev_line.push_str(&current_line);
                 self.anchor = self.cursor;
                 self.modified = true;
+                self.needs_reparse = true;
             }
             return;
         }
@@ -764,6 +780,7 @@ impl Buffer {
         self.cursor.col = start_col;
         self.anchor = self.cursor;
         self.modified = true;
+        self.needs_reparse = true;
     }
 
     // --- Standard Cursor Motions ---
@@ -1073,6 +1090,7 @@ impl Buffer {
             }
         }
         self.modified = true;
+        self.needs_reparse = true;
     }
 
     pub fn surround_delete(&mut self, delim: char) -> bool {
@@ -1098,6 +1116,7 @@ impl Buffer {
             self.anchor = self.cursor;
             self.clamp_cursor();
             self.modified = true;
+            self.needs_reparse = true;
             true
         } else {
             false
@@ -1122,6 +1141,7 @@ impl Buffer {
                 }
             }
             self.modified = true;
+            self.needs_reparse = true;
             true
         } else {
             false
