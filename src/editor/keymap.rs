@@ -158,6 +158,7 @@ impl Editor {
                 }
                 KeyCode::Char('c') => {
                     let all_commented = self.buf_mut().toggle_comment();
+                    self.notify_lsp_change();
                     self.set_status(
                         if all_commented {
                             "Uncommented"
@@ -313,10 +314,12 @@ impl Editor {
                 (KeyCode::Char('p'), KeyModifiers::NONE) => {
                     let clip = self.clipboard.clone();
                     self.buf_mut().paste_newline(&clip);
+                    self.notify_lsp_change();
                 }
                 (KeyCode::Char('P'), _) | (KeyCode::Char('p'), KeyModifiers::SHIFT) => {
                     let clip = self.clipboard.clone();
                     self.buf_mut().paste_here(&clip);
+                    self.notify_lsp_change();
                 }
 
                 // Select whole buffer (Helix %)
@@ -388,6 +391,7 @@ impl Editor {
                 // Undo / Redo
                 (KeyCode::Char('u'), KeyModifiers::NONE) => {
                     if self.buf_mut().undo() {
+                        self.notify_lsp_change();
                         self.set_status("Undo", false);
                     } else {
                         self.set_status("Already at oldest change", false);
@@ -397,6 +401,7 @@ impl Editor {
                 | (KeyCode::Char('u'), KeyModifiers::SHIFT)
                 | (KeyCode::Char('r'), KeyModifiers::CONTROL) => {
                     if self.buf_mut().redo() {
+                        self.notify_lsp_change();
                         self.set_status("Redo", false);
                     } else {
                         self.set_status("Already at newest change", false);
@@ -685,6 +690,7 @@ impl Editor {
                         KeyCode::Char(c) => {
                             let (open, close) = crate::buffer::get_matching_pair(c);
                             self.buf_mut().surround_add(open, close);
+                            self.notify_lsp_change();
                             self.set_status(&format!("Surrounded with {open}{close}"), false);
                             self.mode = Mode::Normal;
                         }
@@ -710,6 +716,7 @@ impl Editor {
                         KeyCode::Char(c) => {
                             let (new_open, new_close) = crate::buffer::get_matching_pair(c);
                             if self.buf_mut().surround_replace(old_c, new_open, new_close) {
+                                self.notify_lsp_change();
                                 self.set_status(
                                     &format!("Replaced surround '{old_c}' with '{new_open}{new_close}'"),
                                     false,
@@ -729,6 +736,7 @@ impl Editor {
                     crate::types::MatchState::SurroundDelete => match code {
                         KeyCode::Char(c) => {
                             if self.buf_mut().surround_delete(c) {
+                                self.notify_lsp_change();
                                 self.set_status(&format!("Deleted surround '{c}'"), false);
                             } else {
                                 self.set_status(&format!("No enclosing delimiter '{c}' found"), true);

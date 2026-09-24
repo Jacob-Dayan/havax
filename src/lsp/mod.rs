@@ -46,6 +46,8 @@ pub struct LspClient {
     pub diagnostics: Arc<Mutex<HashMap<PathBuf, Vec<Diagnostic>>>>,
     pub latest_completions: Arc<Mutex<Option<(u64, Vec<CompletionItem>)>>>,
     pub request_counter: Arc<AtomicU64>,
+    pub diag_version: Arc<AtomicU64>,
+    pub completion_version: Arc<AtomicU64>,
     pub is_running: Arc<AtomicBool>,
     pub root_dir: PathBuf,
 }
@@ -81,11 +83,15 @@ impl LspClient {
         let diagnostics = Arc::new(Mutex::new(HashMap::new()));
         let latest_completions = Arc::new(Mutex::new(None));
         let request_counter = Arc::new(AtomicU64::new(1));
+        let diag_version = Arc::new(AtomicU64::new(0));
+        let completion_version = Arc::new(AtomicU64::new(0));
         let is_running = Arc::new(AtomicBool::new(true));
 
         // Background reader thread
         let diag_clone = Arc::clone(&diagnostics);
         let comp_clone = Arc::clone(&latest_completions);
+        let diag_ver_clone = Arc::clone(&diag_version);
+        let comp_ver_clone = Arc::clone(&completion_version);
         let running_clone = Arc::clone(&is_running);
 
         thread::spawn(move || {
@@ -112,7 +118,13 @@ impl LspClient {
                     let mut body = vec![0u8; len];
                     if reader.read_exact(&mut body).is_ok()
                         && let Ok(json_val) = serde_json::from_slice::<Value>(&body) {
-                            handle_lsp_message(&json_val, &diag_clone, &comp_clone);
+                            handle_lsp_message(
+                                &json_val,
+                                &diag_clone,
+                                &comp_clone,
+                                &diag_ver_clone,
+                                &comp_ver_clone,
+                            );
                         }
                 }
             }
@@ -124,6 +136,8 @@ impl LspClient {
             diagnostics,
             latest_completions,
             request_counter,
+            diag_version,
+            completion_version,
             is_running,
             root_dir: root_dir.clone(),
         };
@@ -274,6 +288,14 @@ impl LspClient {
         }
     }
 
+    pub fn diag_version(&self) -> u64 {
+        self.diag_version.load(Ordering::Relaxed)
+    }
+
+    pub fn completion_version(&self) -> u64 {
+        self.completion_version.load(Ordering::Relaxed)
+    }
+
     pub fn stop(&mut self) {
         self.is_running.store(false, Ordering::Relaxed);
         if let Some(mut child) = self.process.take() {
@@ -362,6 +384,8 @@ fn handle_lsp_message(
     val: &Value,
     diagnostics: &Arc<Mutex<HashMap<PathBuf, Vec<Diagnostic>>>>,
     latest_completions: &Arc<Mutex<Option<(u64, Vec<CompletionItem>)>>>,
+    diag_version: &Arc<AtomicU64>,
+    completion_version: &Arc<AtomicU64>,
 ) {
     // 1. Check for publishDiagnostics notification
     if val.get("method").and_then(|m| m.as_str()) == Some("textDocument/publishDiagnostics") {
@@ -415,6 +439,7 @@ fn handle_lsp_message(
                     }
                     if let Ok(mut guard) = diagnostics.lock() {
                         guard.insert(path, diags);
+                        diag_version.fetch_add(1, Ordering::SeqCst);
                     }
                 }
         return;
@@ -451,6 +476,7 @@ fn handle_lsp_message(
                 }
                 if let Ok(mut guard) = latest_completions.lock() {
                     *guard = Some((id, completions));
+                    completion_version.fetch_add(1, Ordering::SeqCst);
                 }
             }
         }
@@ -1281,6 +1307,7 @@ pub fn get_standard_toml_completions(prefix: &str) -> Vec<CompletionItem> {
         ("theme", "property", Some("Color theme name"), "theme"),
         ("line-number", "property", Some("Line numbers: 'absolute' or 'relative'"), "line-number"),
         ("bufferline", "property", Some("Tab bar: 'always', 'multiple', or 'never'"), "bufferline"),
+        ("auto-format", "property", Some("Format buffer on write: true or false"), "auto-format"),
         ("mouse", "property", Some("Enable mouse: true or false"), "mouse"),
         ("cursor-shape", "property", Some("Cursor shapes table"), "cursor-shape"),
         ("file-picker", "property", Some("File picker table"), "file-picker"),

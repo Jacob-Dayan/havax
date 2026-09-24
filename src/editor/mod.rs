@@ -1,7 +1,7 @@
 use std::{
     error::Error,
     fs,
-    io::{Stdout, stdout},
+    io::{Stdout, stdout, Write},
     path::PathBuf,
 };
 
@@ -148,12 +148,78 @@ impl Editor {
         Ok(())
     }
 
+    pub fn format_buffer_silent(&mut self, idx: usize) {
+        if idx >= self.buffers.len() {
+            return;
+        }
+        let lang = self.buffers[idx].language().to_string();
+        let content = self.buffers[idx].lines.join("\n");
+        if lang == "rust" {
+            let rustfmt_bin = crate::editor::commands::find_binary("rustfmt");
+            if let Ok(mut child) = std::process::Command::new(&rustfmt_bin)
+                .stdin(std::process::Stdio::piped())
+                .stdout(std::process::Stdio::piped())
+                .stderr(std::process::Stdio::null())
+                .spawn()
+            {
+                if let Some(mut stdin) = child.stdin.take() {
+                    let _ = stdin.write_all(content.as_bytes());
+                }
+                if let Ok(out) = child.wait_with_output()
+                    && out.status.success()
+                {
+                    let formatted = String::from_utf8_lossy(&out.stdout);
+                    let buf = &mut self.buffers[idx];
+                    let new_lines: Vec<String> = formatted.lines().map(String::from).collect();
+                    if !new_lines.is_empty() && new_lines != buf.lines {
+                        buf.lines = new_lines;
+                        buf.clamp_cursor();
+                        buf.anchor = buf.cursor;
+                        buf.needs_reparse = true;
+                    }
+                }
+            }
+        } else if lang == "toml"
+            && let Some(taplo_bin) = crate::lsp::find_taplo()
+            && let Ok(mut child) = std::process::Command::new(&taplo_bin)
+                .args(["fmt", "-"])
+                .stdin(std::process::Stdio::piped())
+                .stdout(std::process::Stdio::piped())
+                .stderr(std::process::Stdio::null())
+                .spawn()
+        {
+            if let Some(mut stdin) = child.stdin.take() {
+                let _ = stdin.write_all(content.as_bytes());
+            }
+            if let Ok(out) = child.wait_with_output()
+                && out.status.success()
+            {
+                let formatted = String::from_utf8_lossy(&out.stdout);
+                let buf = &mut self.buffers[idx];
+                let new_lines: Vec<String> = formatted.lines().map(String::from).collect();
+                if !new_lines.is_empty() && new_lines != buf.lines {
+                    buf.lines = new_lines;
+                    buf.clamp_cursor();
+                    buf.anchor = buf.cursor;
+                    buf.needs_reparse = true;
+                }
+            }
+        }
+    }
+
     pub fn save_current(&mut self) -> Result<(), Box<dyn Error>> {
+        let cur = self.current_buffer;
         let buf = self.buf_mut();
         if buf.path.as_os_str().is_empty() || buf.path.to_string_lossy() == "scratch" {
             self.set_status("No file name. Use :w <PATH> to save.", true);
             return Ok(());
         }
+
+        if self.config.editor.auto_format {
+            self.format_buffer_silent(cur);
+        }
+
+        let buf = self.buf_mut();
         let content = buf.lines.join("\n");
         fs::write(&buf.path, content)?;
         buf.modified = false;
@@ -646,15 +712,53 @@ impl Editor {
         self.command_buffer = chars.into_iter().collect();
     }
 
+    pub fn update_lsp_completions(&mut self) {
+        if !self.completion.visible {
+            return;
+        }
+        let is_rust = self.buf().language() == "rust";
+        let is_toml = self.buf().language() == "toml";
+        let lsp_client = if is_rust {
+            self.lsp.as_ref()
+        } else if is_toml {
+            self.toml_lsp.as_ref()
+        } else {
+            None
+        };
+        if let Some(lsp) = lsp_client
+            && let Some((_, lsp_items)) = lsp.get_completions()
+        {
+            for item in lsp_items {
+                if !self.completion.items.iter().any(|it| it.label == item.label) {
+                    self.completion.items.push(item);
+                }
+            }
+        }
+    }
+
     pub fn run_loop(&mut self) -> Result<(), Box<dyn Error>> {
         let mut needs_redraw = true;
+        let mut last_diag_ver = 0;
+        let mut last_comp_ver = 0;
+
         loop {
-            // Check if any LSP background diagnostics/completions arrived
-            if let Some(lsp) = &self.lsp
-                && lsp.get_completions().is_some()
-                && self.completion.visible
-            {
+            // Check if any LSP background diagnostics arrived
+            let current_diag_ver = self.lsp.as_ref().map(|l| l.diag_version()).unwrap_or(0)
+                + self.toml_lsp.as_ref().map(|l| l.diag_version()).unwrap_or(0);
+            if current_diag_ver != last_diag_ver {
+                last_diag_ver = current_diag_ver;
                 needs_redraw = true;
+            }
+
+            // Check if any LSP background completions arrived
+            let current_comp_ver = self.lsp.as_ref().map(|l| l.completion_version()).unwrap_or(0)
+                + self.toml_lsp.as_ref().map(|l| l.completion_version()).unwrap_or(0);
+            if current_comp_ver != last_comp_ver {
+                last_comp_ver = current_comp_ver;
+                if self.completion.visible {
+                    self.update_lsp_completions();
+                    needs_redraw = true;
+                }
             }
 
             if needs_redraw {

@@ -30,6 +30,13 @@ pub struct EditorConfig {
     )]
     pub bufferline: Bufferline,
 
+    #[serde(
+        default = "default_auto_format",
+        rename = "auto-format",
+        alias = "auto_format"
+    )]
+    pub auto_format: bool,
+
     #[serde(default = "default_mouse")]
     pub mouse: bool,
 
@@ -38,6 +45,10 @@ pub struct EditorConfig {
 
     #[serde(default, rename = "file-picker", alias = "file_picker")]
     pub file_picker: FilePickerConfig,
+}
+
+fn default_auto_format() -> bool {
+    true
 }
 
 fn default_mouse() -> bool {
@@ -49,6 +60,7 @@ impl Default for EditorConfig {
         Self {
             line_number: LineNumber::Absolute,
             bufferline: Bufferline::Always,
+            auto_format: true,
             mouse: true,
             cursor_shape: CursorShapeConfig::default(),
             file_picker: FilePickerConfig::default(),
@@ -216,6 +228,7 @@ impl Config {
 [editor]
 line-number = "absolute"
 bufferline = "always"
+auto-format = true
 mouse = true
 
 [editor.cursor-shape]

@@ -182,11 +182,17 @@ impl Editor {
             }
             "wa" | "wall" | "write-all" => {
                 let mut saved = 0;
-                for b in &mut self.buffers {
+                let auto_fmt = self.config.editor.auto_format;
+                for i in 0..self.buffers.len() {
+                    let b = &self.buffers[i];
                     if b.modified
                         && !b.path.as_os_str().is_empty()
                         && b.path.to_string_lossy() != "scratch"
                     {
+                        if auto_fmt {
+                            self.format_buffer_silent(i);
+                        }
+                        let b = &mut self.buffers[i];
                         let content = b.lines.join("\n");
                         if std::fs::write(&b.path, content).is_ok() {
                             b.modified = false;
@@ -229,11 +235,17 @@ impl Editor {
                 return Ok(false);
             }
             "wqa" | "wqall" | "xa" => {
-                for b in &mut self.buffers {
+                let auto_fmt = self.config.editor.auto_format;
+                for i in 0..self.buffers.len() {
+                    let b = &self.buffers[i];
                     if b.modified
                         && !b.path.as_os_str().is_empty()
                         && b.path.to_string_lossy() != "scratch"
                     {
+                        if auto_fmt {
+                            self.format_buffer_silent(i);
+                        }
+                        let b = &mut self.buffers[i];
                         let content = b.lines.join("\n");
                         let _ = std::fs::write(&b.path, content);
                         b.modified = false;

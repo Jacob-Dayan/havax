@@ -266,6 +266,11 @@ hidden = false
 - **Write/Quit Aliases**: Added support for `:w!`, `:wa`, `:wall`, `:write-all`, `:write!`, `:wq!`, `:x!`, `:qa`, `:qa!`, `:qall`, `:qall!`, `:wqa`, `:wqall`, `:xa`.
 - **Interactive Tab Clicks**: Added mouse click support on row 0 tabs to switch directly to clicked buffer when `bufferline` is active.
 
+### Phase 16 — Configurable Auto-Format & Real-Time Background LSP Reactivity
+- **Configurable Auto-Format**: Added `auto-format` / `auto_format` under `[editor]` configuration (defaulting to `true`). When enabled, buffers are automatically formatted on write (`:w`, `:wa`, `:wqa`, etc.) using `rustfmt` (for Rust) or `taplo` (for TOML) with fallback.
+- **Real-Time LSP Reactivity**: Fixed the issue where users had to press `<ESC>` to see LSP updates. Implemented `diag_version` and `completion_version` atomic version tracking in `LspClient`. The event loop polls these version counters every 30ms and triggers instant redrawing as soon as `publishDiagnostics` or `completion` responses arrive in the background thread.
+- **Comprehensive LSP Change Notifications**: Ensured `notify_lsp_change()` is called across all typing operations, word deletions, paste actions, undo/redo, comment toggling, and surround edits.
+
 ---
 
 ## Testing
@@ -274,15 +279,17 @@ hidden = false
 cargo test
 ```
 
-46 tests covering:
+47 tests covering:
 - CLI argument parsing and `-a` directory scanning
 - TOML configuration deserialization & Havax config path resolution
 - All command-mode commands (`:new`, `:w`, `:wa`, `:pwd`, `:cd`, `:set-language`, `:config-open`, `:config-reload`)
+- Configurable auto-format (`auto-format = true/false`) on write
 - Visual mode motions (`vgl`)
 - Word/back-word motions with selection marking
 - Match mode (brackets, surround, select around/inside)
 - Tree-sitter syntax highlighting accuracy (Rust and TOML)
 - LSP diagnostics and completion triggering (Rust and TOML)
+- Real-time background LSP diagnostic & completion reactivity
 - Scoped module completions filtering
 - Command-mode Tab/BackTab cycling and expanded write aliases
 - Theme inheritance and custom overrides

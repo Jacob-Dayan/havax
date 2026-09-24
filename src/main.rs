@@ -1988,5 +1988,69 @@ inherits = "catppuccin_mocha"
         assert!(completions.contains(&"write!"));
         assert!(completions.contains(&"write-all"));
     }
+
+    #[test]
+    fn test_auto_format_configuration_and_save() {
+        // Test TOML parsing of auto-format
+        let toml_str_true = r#"
+theme = "one-dark"
+[editor]
+auto-format = true
+"#;
+        let cfg_true: Config = toml::from_str(toml_str_true).unwrap();
+        assert!(cfg_true.editor.auto_format);
+
+        let toml_str_false = r#"
+theme = "one-dark"
+[editor]
+auto-format = false
+"#;
+        let cfg_false: Config = toml::from_str(toml_str_false).unwrap();
+        assert!(!cfg_false.editor.auto_format);
+
+        // Default should be true
+        let default_cfg = Config::default();
+        assert!(default_cfg.editor.auto_format);
+
+        // Test save with auto_format = false
+        let temp_dir = std::env::temp_dir().join("havax_test_auto_format");
+        let _ = std::fs::create_dir_all(&temp_dir);
+        let test_file = temp_dir.join("test_fmt.rs");
+        let unformatted = "fn   test (  )   {  let  x=1 ;}\n";
+        let _ = std::fs::write(&test_file, unformatted);
+
+        let mut editor = Editor {
+            buffers: vec![Buffer::new(test_file.clone()).unwrap()],
+            current_buffer: 0,
+            mode: types::Mode::Normal,
+            goto_return_mode: types::Mode::Normal,
+            match_return_mode: types::Mode::Normal,
+            match_state: types::MatchState::Menu,
+            clipboard: String::new(),
+            command_buffer: String::new(),
+            command_prefix: None,
+            command_completion_idx: 0,
+            status_message: None,
+            file_picker: None,
+            stdout: std::io::stdout(),
+            config: cfg_false,
+            config_path: None,
+            theme: ui::theme::Theme::one_dark(),
+            lsp: None,
+            toml_lsp: None,
+            completion: lsp::completion::CompletionMenu::new(),
+            lsp_doc_version: 1,
+            pending_c: false,
+        };
+
+        editor.buf_mut().modified = true;
+        editor.save_current().unwrap();
+        let saved_content = std::fs::read_to_string(&test_file).unwrap();
+        // With auto_format = false, it preserved the unformatted code
+        assert_eq!(saved_content, unformatted.trim_end());
+
+        // Clean up
+        let _ = std::fs::remove_dir_all(&temp_dir);
+    }
 }
 
