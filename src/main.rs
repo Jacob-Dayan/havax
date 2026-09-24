@@ -2052,5 +2052,115 @@ auto-format = false
         // Clean up
         let _ = std::fs::remove_dir_all(&temp_dir);
     }
+
+    #[test]
+    fn test_string_scoped_completions_and_method_completions() {
+        let path = PathBuf::from("test_string_scope.rs");
+        let mut buf = Buffer::new(path).unwrap();
+        buf.lines = vec![
+            "fn main() {".to_string(),
+            "    let s = String::".to_string(),
+            "}".to_string(),
+        ];
+        buf.cursor = types::Position { row: 1, col: 20 }; // right after `String::`
+        buf.anchor = buf.cursor;
+        buf.language = Some("rust".to_string());
+        buf.reparse();
+
+        let mut editor = Editor {
+            buffers: vec![buf],
+            current_buffer: 0,
+            mode: types::Mode::Insert,
+            goto_return_mode: types::Mode::Normal,
+            match_return_mode: types::Mode::Normal,
+            match_state: types::MatchState::Menu,
+            clipboard: String::new(),
+            command_buffer: String::new(),
+            command_prefix: None,
+            command_completion_idx: 0,
+            status_message: None,
+            file_picker: None,
+            stdout: std::io::stdout(),
+            config: Config::default(),
+            config_path: None,
+            theme: ui::theme::Theme::one_dark(),
+            lsp: None,
+            toml_lsp: None,
+            completion: lsp::completion::CompletionMenu::new(),
+            lsp_doc_version: 1,
+            pending_c: false,
+        };
+
+        // 1. Test `String::` triggers completion with all associated functions
+        editor.trigger_completion();
+        assert!(editor.completion.visible, "Completion menu must be visible right after `String::`");
+        let labels: Vec<&str> = editor.completion.items.iter().map(|it| it.label.as_str()).collect();
+        assert!(labels.contains(&"new"), "Must contain 'new'");
+        assert!(labels.contains(&"from"), "Must contain 'from'");
+        assert!(labels.contains(&"with_capacity"), "Must contain 'with_capacity'");
+        assert!(labels.contains(&"from_utf8"), "Must contain 'from_utf8'");
+        assert!(labels.contains(&"from_utf8_lossy"), "Must contain 'from_utf8_lossy'");
+        assert!(labels.contains(&"from_utf8_unchecked"), "Must contain 'from_utf8_unchecked'");
+        assert!(labels.contains(&"default"), "Must contain 'default'");
+
+        // 2. Test `String::fr` filters to `from`, `from_utf8`, etc.
+        editor.buf_mut().lines[1] = "    let s = String::fr".to_string();
+        editor.buf_mut().cursor = types::Position { row: 1, col: 22 };
+        editor.trigger_completion();
+        assert!(editor.completion.visible);
+        let fr_labels: Vec<&str> = editor.completion.items.iter().map(|it| it.label.as_str()).collect();
+        assert!(fr_labels.contains(&"from"));
+        assert!(fr_labels.contains(&"from_utf8"));
+        assert!(fr_labels.contains(&"from_utf8_lossy"));
+        assert!(fr_labels.contains(&"from_utf8_unchecked"));
+        assert!(!fr_labels.contains(&"with_capacity"));
+
+        // 3. Test method completions with dot operator `s.`
+        editor.buf_mut().lines[1] = "    let mut s = String::new();".to_string();
+        editor.buf_mut().lines.insert(2, "    s.".to_string());
+        editor.buf_mut().cursor = types::Position { row: 2, col: 6 }; // right after `s.`
+        editor.trigger_completion();
+        assert!(editor.completion.visible);
+        let s_labels: Vec<&str> = editor.completion.items.iter().map(|it| it.label.as_str()).collect();
+        assert!(s_labels.contains(&"len"), "Must contain 'len' for string");
+        assert!(s_labels.contains(&"push_str"), "Must contain 'push_str' for string");
+        assert!(s_labels.contains(&"as_str"), "Must contain 'as_str' for string");
+        assert!(s_labels.contains(&"trim"), "Must contain 'trim' for string");
+        assert!(s_labels.contains(&"chars"), "Must contain 'chars' for string");
+
+        // 4. Test AST-scoped completion for custom struct impl & enum
+        let mut custom_buf = Buffer::new(PathBuf::from("test_custom_ast.rs")).unwrap();
+        custom_buf.lines = vec![
+            "struct MyService;".to_string(),
+            "impl MyService {".to_string(),
+            "    pub fn start_service() -> Self { MyService }".to_string(),
+            "    pub fn stop_service(&self) {}".to_string(),
+            "}".to_string(),
+            "enum ServiceStatus { Running, Stopped }".to_string(),
+            "fn main() {".to_string(),
+            "    MyService::".to_string(),
+            "}".to_string(),
+        ];
+        custom_buf.cursor = types::Position { row: 7, col: 15 };
+        custom_buf.language = Some("rust".to_string());
+        custom_buf.reparse();
+
+        editor.buffers = vec![custom_buf];
+        editor.trigger_completion();
+        assert!(editor.completion.visible);
+        let custom_labels: Vec<&str> = editor.completion.items.iter().map(|it| it.label.as_str()).collect();
+        assert!(custom_labels.contains(&"start_service"), "Must extract start_service from AST impl");
+        assert!(custom_labels.contains(&"stop_service"), "Must extract stop_service from AST impl");
+
+        // Check enum variants for ServiceStatus::
+        editor.buf_mut().lines[7] = "    ServiceStatus::".to_string();
+        editor.buf_mut().cursor = types::Position { row: 7, col: 19 };
+        editor.buf_mut().reparse();
+        editor.trigger_completion();
+        assert!(editor.completion.visible);
+        let enum_labels: Vec<&str> = editor.completion.items.iter().map(|it| it.label.as_str()).collect();
+        assert!(enum_labels.contains(&"Running"), "Must extract enum variant Running");
+        assert!(enum_labels.contains(&"Stopped"), "Must extract enum variant Stopped");
+    }
 }
 

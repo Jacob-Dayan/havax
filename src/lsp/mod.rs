@@ -519,6 +519,389 @@ pub fn get_scoped_rust_completions(scope: &str, prefix: &str) -> Vec<CompletionI
     let p_lower = prefix.to_lowercase();
 
     let items: &[(&str, &str, Option<&str>, &str)] = match clean_scope {
+        "String" | "std::string::String" | "string::String" => &[
+            ("new", "function", Some("fn new() -> String"), "new()"),
+            ("from", "function", Some("fn from(s: &str) -> String"), "from($0)"),
+            ("with_capacity", "function", Some("fn with_capacity(capacity: usize) -> String"), "with_capacity($0)"),
+            ("from_utf8", "function", Some("fn from_utf8(vec: Vec<u8>) -> Result<String, FromUtf8Error>"), "from_utf8($0)"),
+            ("from_utf8_lossy", "function", Some("fn from_utf8_lossy(v: &[u8]) -> Cow<'_, str>"), "from_utf8_lossy($0)"),
+            ("from_utf8_unchecked", "function", Some("unsafe fn from_utf8_unchecked(bytes: Vec<u8>) -> String"), "from_utf8_unchecked($0)"),
+            ("from_utf16", "function", Some("fn from_utf16(v: &[u16]) -> Result<String, FromUtf16Error>"), "from_utf16($0)"),
+            ("from_utf16_lossy", "function", Some("fn from_utf16_lossy(v: &[u16]) -> String"), "from_utf16_lossy($0)"),
+            ("default", "function", Some("fn default() -> String"), "default()"),
+            ("as_str", "method", Some("fn as_str(&self) -> &str"), "as_str()"),
+            ("as_bytes", "method", Some("fn as_bytes(&self) -> &[u8]"), "as_bytes()"),
+            ("len", "method", Some("fn len(&self) -> usize"), "len()"),
+            ("is_empty", "method", Some("fn is_empty(&self) -> bool"), "is_empty()"),
+            ("push", "method", Some("fn push(&mut self, ch: char)"), "push($0)"),
+            ("push_str", "method", Some("fn push_str(&mut self, string: &str)"), "push_str($0)"),
+            ("pop", "method", Some("fn pop(&mut self) -> Option<char>"), "pop()"),
+            ("clear", "method", Some("fn clear(&mut self)"), "clear()"),
+            ("truncate", "method", Some("fn truncate(&mut self, new_len: usize)"), "truncate($0)"),
+            ("capacity", "method", Some("fn capacity(&self) -> usize"), "capacity()"),
+            ("reserve", "method", Some("fn reserve(&mut self, additional: usize)"), "reserve($0)"),
+            ("shrink_to_fit", "method", Some("fn shrink_to_fit(&mut self)"), "shrink_to_fit()"),
+            ("retain", "method", Some("fn retain<F>(&mut self, f: F) where F: FnMut(char) -> bool"), "retain($0)"),
+            ("split_off", "method", Some("fn split_off(&mut self, at: usize) -> String"), "split_off($0)"),
+            ("into_bytes", "method", Some("fn into_bytes(self) -> Vec<u8>"), "into_bytes()"),
+            ("into_boxed_str", "method", Some("fn into_boxed_str(self) -> Box<str>"), "into_boxed_str()"),
+            ("chars", "method", Some("fn chars(&self) -> Chars<'_>"), "chars()"),
+            ("bytes", "method", Some("fn bytes(&self) -> Bytes<'_>"), "bytes()"),
+            ("lines", "method", Some("fn lines(&self) -> Lines<'_>"), "lines()"),
+            ("split", "method", Some("fn split<'a, P>(&'a self, pat: P) -> Split<'a, P>"), "split($0)"),
+            ("split_whitespace", "method", Some("fn split_whitespace(&self) -> SplitWhitespace<'_>"), "split_whitespace()"),
+            ("trim", "method", Some("fn trim(&self) -> &str"), "trim()"),
+            ("trim_start", "method", Some("fn trim_start(&self) -> &str"), "trim_start()"),
+            ("trim_end", "method", Some("fn trim_end(&self) -> &str"), "trim_end()"),
+            ("contains", "method", Some("fn contains<P: Pattern>(&self, pat: P) -> bool"), "contains($0)"),
+            ("starts_with", "method", Some("fn starts_with<P: Pattern>(&self, pat: P) -> bool"), "starts_with($0)"),
+            ("ends_with", "method", Some("fn ends_with<P: Pattern>(&self, pat: P) -> bool"), "ends_with($0)"),
+            ("find", "method", Some("fn find<P: Pattern>(&self, pat: P) -> Option<usize>"), "find($0)"),
+            ("replace", "method", Some("fn replace<P: Pattern>(&self, from: P, to: &str) -> String"), "replace($0)"),
+            ("to_lowercase", "method", Some("fn to_lowercase(&self) -> String"), "to_lowercase()"),
+            ("to_uppercase", "method", Some("fn to_uppercase(&self) -> String"), "to_uppercase()"),
+            ("clone", "method", Some("fn clone(&self) -> String"), "clone()"),
+        ],
+        "Vec" | "std::vec::Vec" | "vec::Vec" => &[
+            ("new", "function", Some("fn new() -> Vec<T>"), "new()"),
+            ("with_capacity", "function", Some("fn with_capacity(capacity: usize) -> Vec<T>"), "with_capacity($0)"),
+            ("from_raw_parts", "function", Some("unsafe fn from_raw_parts(ptr: *mut T, length: usize, capacity: usize) -> Vec<T>"), "from_raw_parts($0)"),
+            ("push", "method", Some("fn push(&mut self, value: T)"), "push($0)"),
+            ("pop", "method", Some("fn pop(&mut self) -> Option<T>"), "pop()"),
+            ("len", "method", Some("fn len(&self) -> usize"), "len()"),
+            ("is_empty", "method", Some("fn is_empty(&self) -> bool"), "is_empty()"),
+            ("clear", "method", Some("fn clear(&mut self)"), "clear()"),
+            ("insert", "method", Some("fn insert(&mut self, index: usize, element: T)"), "insert($0)"),
+            ("remove", "method", Some("fn remove(&mut self, index: usize) -> T"), "remove($0)"),
+            ("swap_remove", "method", Some("fn swap_remove(&mut self, index: usize) -> T"), "swap_remove($0)"),
+            ("retain", "method", Some("fn retain<F>(&mut self, f: F) where F: FnMut(&T) -> bool"), "retain($0)"),
+            ("dedup", "method", Some("fn dedup(&mut self)"), "dedup()"),
+            ("as_slice", "method", Some("fn as_slice(&self) -> &[T]"), "as_slice()"),
+            ("as_mut_slice", "method", Some("fn as_mut_slice(&mut self) -> &mut [T]"), "as_mut_slice()"),
+            ("iter", "method", Some("fn iter(&self) -> Iter<'_, T>"), "iter()"),
+            ("iter_mut", "method", Some("fn iter_mut(&mut self) -> IterMut<'_, T>"), "iter_mut()"),
+            ("into_iter", "method", Some("fn into_iter(self) -> IntoIter<T>"), "into_iter()"),
+            ("capacity", "method", Some("fn capacity(&self) -> usize"), "capacity()"),
+            ("reserve", "method", Some("fn reserve(&mut self, additional: usize)"), "reserve($0)"),
+            ("shrink_to_fit", "method", Some("fn shrink_to_fit(&mut self)"), "shrink_to_fit()"),
+            ("truncate", "method", Some("fn truncate(&mut self, len: usize)"), "truncate($0)"),
+            ("extend", "method", Some("fn extend<I: IntoIterator<Item = T>>(&mut self, iter: I)"), "extend($0)"),
+            ("sort", "method", Some("fn sort(&mut self) where T: Ord"), "sort()"),
+            ("sort_by", "method", Some("fn sort_by<F>(&mut self, compare: F) where F: FnMut(&T, &T) -> Ordering"), "sort_by($0)"),
+            ("sort_by_key", "method", Some("fn sort_by_key<K, F>(&mut self, f: F) where F: FnMut(&T) -> K, K: Ord"), "sort_by_key($0)"),
+            ("contains", "method", Some("fn contains(&self, x: &T) -> bool where T: PartialEq"), "contains($0)"),
+            ("first", "method", Some("fn first(&self) -> Option<&T>"), "first()"),
+            ("last", "method", Some("fn last(&self) -> Option<&T>"), "last()"),
+            ("get", "method", Some("fn get(&self, index: usize) -> Option<&T>"), "get($0)"),
+            ("get_mut", "method", Some("fn get_mut(&mut self, index: usize) -> Option<&mut T>"), "get_mut($0)"),
+            ("clone", "method", Some("fn clone(&self) -> Vec<T>"), "clone()"),
+        ],
+        "Option" | "std::option::Option" | "option::Option" => &[
+            ("Some", "enum_member", Some("Option::Some(T)"), "Some($0)"),
+            ("None", "enum_member", Some("Option::None"), "None"),
+            ("is_some", "method", Some("fn is_some(&self) -> bool"), "is_some()"),
+            ("is_none", "method", Some("fn is_none(&self) -> bool"), "is_none()"),
+            ("unwrap", "method", Some("fn unwrap(self) -> T"), "unwrap()"),
+            ("unwrap_or", "method", Some("fn unwrap_or(self, default: T) -> T"), "unwrap_or($0)"),
+            ("unwrap_or_default", "method", Some("fn unwrap_or_default(self) -> T where T: Default"), "unwrap_or_default()"),
+            ("unwrap_or_else", "method", Some("fn unwrap_or_else<F>(self, f: F) -> T where F: FnOnce() -> T"), "unwrap_or_else($0)"),
+            ("expect", "method", Some("fn expect(self, msg: &str) -> T"), "expect($0)"),
+            ("map", "method", Some("fn map<U, F>(self, f: F) -> Option<U> where F: FnOnce(T) -> U"), "map($0)"),
+            ("map_or", "method", Some("fn map_or<U, F>(self, default: U, f: F) -> U where F: FnOnce(T) -> U"), "map_or($0)"),
+            ("map_or_else", "method", Some("fn map_or_else<U, D, F>(self, default: D, f: F) -> U"), "map_or_else($0)"),
+            ("and", "method", Some("fn and<U>(self, optb: Option<U>) -> Option<U>"), "and($0)"),
+            ("and_then", "method", Some("fn and_then<U, F>(self, f: F) -> Option<U> where F: FnOnce(T) -> Option<U>"), "and_then($0)"),
+            ("or", "method", Some("fn or(self, optb: Option<T>) -> Option<T>"), "or($0)"),
+            ("or_else", "method", Some("fn or_else<F>(self, f: F) -> Option<T> where F: FnOnce() -> Option<T>"), "or_else($0)"),
+            ("take", "method", Some("fn take(&mut self) -> Option<T>"), "take()"),
+            ("replace", "method", Some("fn replace(&mut self, value: T) -> Option<T>"), "replace($0)"),
+            ("as_ref", "method", Some("fn as_ref(&self) -> Option<&T>"), "as_ref()"),
+            ("as_mut", "method", Some("fn as_mut(&mut self) -> Option<&mut T>"), "as_mut()"),
+            ("as_deref", "method", Some("fn as_deref(&self) -> Option<&T::Target>"), "as_deref()"),
+            ("ok_or", "method", Some("fn ok_or<E>(self, err: E) -> Result<T, E>"), "ok_or($0)"),
+            ("ok_or_else", "method", Some("fn ok_or_else<E, F>(self, err: F) -> Result<T, E>"), "ok_or_else($0)"),
+            ("filter", "method", Some("fn filter<P>(self, predicate: P) -> Option<T> where P: FnOnce(&T) -> bool"), "filter($0)"),
+            ("zip", "method", Some("fn zip<U>(self, other: Option<U>) -> Option<(T, U)>"), "zip($0)"),
+            ("flatten", "method", Some("fn flatten(self) -> Option<T::Item>"), "flatten()"),
+            ("cloned", "method", Some("fn cloned(self) -> Option<T> where T: Clone"), "cloned()"),
+            ("copied", "method", Some("fn copied(self) -> Option<T> where T: Copy"), "copied()"),
+        ],
+        "Result" | "std::result::Result" | "result::Result" => &[
+            ("Ok", "enum_member", Some("Result::Ok(T)"), "Ok($0)"),
+            ("Err", "enum_member", Some("Result::Err(E)"), "Err($0)"),
+            ("is_ok", "method", Some("fn is_ok(&self) -> bool"), "is_ok()"),
+            ("is_err", "method", Some("fn is_err(&self) -> bool"), "is_err()"),
+            ("unwrap", "method", Some("fn unwrap(self) -> T"), "unwrap()"),
+            ("unwrap_err", "method", Some("fn unwrap_err(self) -> E"), "unwrap_err()"),
+            ("unwrap_or", "method", Some("fn unwrap_or(self, default: T) -> T"), "unwrap_or($0)"),
+            ("unwrap_or_default", "method", Some("fn unwrap_or_default(self) -> T where T: Default"), "unwrap_or_default()"),
+            ("unwrap_or_else", "method", Some("fn unwrap_or_else<F>(self, op: F) -> T where F: FnOnce(E) -> T"), "unwrap_or_else($0)"),
+            ("expect", "method", Some("fn expect(self, msg: &str) -> T"), "expect($0)"),
+            ("expect_err", "method", Some("fn expect_err(self, msg: &str) -> E"), "expect_err($0)"),
+            ("map", "method", Some("fn map<U, F>(self, op: F) -> Result<U, E> where F: FnOnce(T) -> U"), "map($0)"),
+            ("map_err", "method", Some("fn map_err<F, O>(self, op: O) -> Result<T, F> where O: FnOnce(E) -> F"), "map_err($0)"),
+            ("and_then", "method", Some("fn and_then<U, F>(self, op: F) -> Result<U, E> where F: FnOnce(T) -> Result<U, E>"), "and_then($0)"),
+            ("or_else", "method", Some("fn or_else<F, O>(self, op: O) -> Result<T, F> where O: FnOnce(E) -> Result<T, F>"), "or_else($0)"),
+            ("as_ref", "method", Some("fn as_ref(&self) -> Result<&T, &E>"), "as_ref()"),
+            ("as_mut", "method", Some("fn as_mut(&mut self) -> Result<&mut T, &mut E>"), "as_mut()"),
+            ("as_deref", "method", Some("fn as_deref(&self) -> Result<&T::Target, &E>"), "as_deref()"),
+            ("ok", "method", Some("fn ok(self) -> Option<T>"), "ok()"),
+            ("err", "method", Some("fn err(self) -> Option<E>"), "err()"),
+            ("cloned", "method", Some("fn cloned(self) -> Result<T, E> where T: Clone"), "cloned()"),
+            ("copied", "method", Some("fn copied(self) -> Result<T, E> where T: Copy"), "copied()"),
+        ],
+        "HashMap" | "std::collections::HashMap" | "collections::HashMap" => &[
+            ("new", "function", Some("fn new() -> HashMap<K, V>"), "new()"),
+            ("with_capacity", "function", Some("fn with_capacity(capacity: usize) -> HashMap<K, V>"), "with_capacity($0)"),
+            ("insert", "method", Some("fn insert(&mut self, k: K, v: V) -> Option<V>"), "insert($0)"),
+            ("get", "method", Some("fn get<Q>(&self, k: &Q) -> Option<&V>"), "get($0)"),
+            ("get_mut", "method", Some("fn get_mut<Q>(&mut self, k: &Q) -> Option<&mut V>"), "get_mut($0)"),
+            ("get_key_value", "method", Some("fn get_key_value<Q>(&self, k: &Q) -> Option<(&K, &V)>"), "get_key_value($0)"),
+            ("contains_key", "method", Some("fn contains_key<Q>(&self, k: &Q) -> bool"), "contains_key($0)"),
+            ("remove", "method", Some("fn remove<Q>(&mut self, k: &Q) -> Option<V>"), "remove($0)"),
+            ("remove_entry", "method", Some("fn remove_entry<Q>(&mut self, k: &Q) -> Option<(K, V)>"), "remove_entry($0)"),
+            ("entry", "method", Some("fn entry(&mut self, key: K) -> Entry<'_, K, V>"), "entry($0)"),
+            ("len", "method", Some("fn len(&self) -> usize"), "len()"),
+            ("is_empty", "method", Some("fn is_empty(&self) -> bool"), "is_empty()"),
+            ("clear", "method", Some("fn clear(&mut self)"), "clear()"),
+            ("keys", "method", Some("fn keys(&self) -> Keys<'_, K, V>"), "keys()"),
+            ("values", "method", Some("fn values(&self) -> Values<'_, K, V>"), "values()"),
+            ("values_mut", "method", Some("fn values_mut(&mut self) -> ValuesMut<'_, K, V>"), "values_mut()"),
+            ("iter", "method", Some("fn iter(&self) -> Iter<'_, K, V>"), "iter()"),
+            ("iter_mut", "method", Some("fn iter_mut(&mut self) -> IterMut<'_, K, V>"), "iter_mut()"),
+            ("retain", "method", Some("fn retain<F>(&mut self, f: F)"), "retain($0)"),
+            ("drain", "method", Some("fn drain(&mut self) -> Drain<'_, K, V>"), "drain()"),
+        ],
+        "HashSet" | "std::collections::HashSet" | "collections::HashSet" => &[
+            ("new", "function", Some("fn new() -> HashSet<T>"), "new()"),
+            ("with_capacity", "function", Some("fn with_capacity(capacity: usize) -> HashSet<T>"), "with_capacity($0)"),
+            ("insert", "method", Some("fn insert(&mut self, value: T) -> bool"), "insert($0)"),
+            ("contains", "method", Some("fn contains<Q>(&self, value: &Q) -> bool"), "contains($0)"),
+            ("remove", "method", Some("fn remove<Q>(&mut self, value: &Q) -> bool"), "remove($0)"),
+            ("len", "method", Some("fn len(&self) -> usize"), "len()"),
+            ("is_empty", "method", Some("fn is_empty(&self) -> bool"), "is_empty()"),
+            ("clear", "method", Some("fn clear(&mut self)"), "clear()"),
+            ("iter", "method", Some("fn iter(&self) -> Iter<'_, T>"), "iter()"),
+            ("union", "method", Some("fn union<'a>(&'a self, other: &'a HashSet<T>) -> Union<'a, T>"), "union($0)"),
+            ("intersection", "method", Some("fn intersection<'a>(&'a self, other: &'a HashSet<T>) -> Intersection<'a, T>"), "intersection($0)"),
+            ("difference", "method", Some("fn difference<'a>(&'a self, other: &'a HashSet<T>) -> Difference<'a, T>"), "difference($0)"),
+            ("is_subset", "method", Some("fn is_subset(&self, other: &HashSet<T>) -> bool"), "is_subset($0)"),
+            ("is_superset", "method", Some("fn is_superset(&self, other: &HashSet<T>) -> bool"), "is_superset($0)"),
+        ],
+        "BTreeMap" | "std::collections::BTreeMap" | "collections::BTreeMap" => &[
+            ("new", "function", Some("fn new() -> BTreeMap<K, V>"), "new()"),
+            ("insert", "method", Some("fn insert(&mut self, key: K, value: V) -> Option<V>"), "insert($0)"),
+            ("get", "method", Some("fn get<Q>(&self, key: &Q) -> Option<&V>"), "get($0)"),
+            ("get_mut", "method", Some("fn get_mut<Q>(&mut self, key: &Q) -> Option<&mut V>"), "get_mut($0)"),
+            ("contains_key", "method", Some("fn contains_key<Q>(&self, key: &Q) -> bool"), "contains_key($0)"),
+            ("remove", "method", Some("fn remove<Q>(&mut self, key: &Q) -> Option<V>"), "remove($0)"),
+            ("len", "method", Some("fn len(&self) -> usize"), "len()"),
+            ("is_empty", "method", Some("fn is_empty(&self) -> bool"), "is_empty()"),
+            ("clear", "method", Some("fn clear(&mut self)"), "clear()"),
+            ("keys", "method", Some("fn keys(&self) -> Keys<'_, K, V>"), "keys()"),
+            ("values", "method", Some("fn values(&self) -> Values<'_, K, V>"), "values()"),
+            ("iter", "method", Some("fn iter(&self) -> Iter<'_, K, V>"), "iter()"),
+        ],
+        "BTreeSet" | "std::collections::BTreeSet" | "collections::BTreeSet" => &[
+            ("new", "function", Some("fn new() -> BTreeSet<T>"), "new()"),
+            ("insert", "method", Some("fn insert(&mut self, value: T) -> bool"), "insert($0)"),
+            ("contains", "method", Some("fn contains<Q>(&self, value: &Q) -> bool"), "contains($0)"),
+            ("remove", "method", Some("fn remove<Q>(&mut self, value: &Q) -> bool"), "remove($0)"),
+            ("len", "method", Some("fn len(&self) -> usize"), "len()"),
+            ("is_empty", "method", Some("fn is_empty(&self) -> bool"), "is_empty()"),
+            ("clear", "method", Some("fn clear(&mut self)"), "clear()"),
+            ("iter", "method", Some("fn iter(&self) -> Iter<'_, T>"), "iter()"),
+        ],
+        "Path" | "std::path::Path" | "path::Path" => &[
+            ("new", "function", Some("fn new<S: AsRef<OsStr> + ?Sized>(s: &S) -> &Path"), "new($0)"),
+            ("display", "method", Some("fn display(&self) -> Display<'_>"), "display()"),
+            ("is_file", "method", Some("fn is_file(&self) -> bool"), "is_file()"),
+            ("is_dir", "method", Some("fn is_dir(&self) -> bool"), "is_dir()"),
+            ("exists", "method", Some("fn exists(&self) -> bool"), "exists()"),
+            ("to_path_buf", "method", Some("fn to_path_buf(&self) -> PathBuf"), "to_path_buf()"),
+            ("parent", "method", Some("fn parent(&self) -> Option<&Path>"), "parent()"),
+            ("file_name", "method", Some("fn file_name(&self) -> Option<&OsStr>"), "file_name()"),
+            ("file_stem", "method", Some("fn file_stem(&self) -> Option<&OsStr>"), "file_stem()"),
+            ("extension", "method", Some("fn extension(&self) -> Option<&OsStr>"), "extension()"),
+            ("join", "method", Some("fn join<P: AsRef<Path>>(&self, path: P) -> PathBuf"), "join($0)"),
+            ("canonicalize", "method", Some("fn canonicalize(&self) -> io::Result<PathBuf>"), "canonicalize()"),
+            ("components", "method", Some("fn components(&self) -> Components<'_>"), "components()"),
+            ("ancestors", "method", Some("fn ancestors(&self) -> Ancestors<'_>"), "ancestors()"),
+            ("starts_with", "method", Some("fn starts_with<P: AsRef<Path>>(&self, base: P) -> bool"), "starts_with($0)"),
+            ("ends_with", "method", Some("fn ends_with<P: AsRef<Path>>(&self, child: P) -> bool"), "ends_with($0)"),
+            ("to_str", "method", Some("fn to_str(&self) -> Option<&str>"), "to_str()"),
+            ("to_string_lossy", "method", Some("fn to_string_lossy(&self) -> Cow<'_, str>"), "to_string_lossy()"),
+        ],
+        "PathBuf" | "std::path::PathBuf" | "path::PathBuf" => &[
+            ("new", "function", Some("fn new() -> PathBuf"), "new()"),
+            ("from", "function", Some("fn from(s: &str) -> PathBuf"), "from($0)"),
+            ("with_capacity", "function", Some("fn with_capacity(capacity: usize) -> PathBuf"), "with_capacity($0)"),
+            ("push", "method", Some("fn push<P: AsRef<Path>>(&mut self, path: P)"), "push($0)"),
+            ("pop", "method", Some("fn pop(&mut self) -> bool"), "pop()"),
+            ("set_file_name", "method", Some("fn set_file_name<S: AsRef<OsStr>>(&mut self, file_name: S)"), "set_file_name($0)"),
+            ("set_extension", "method", Some("fn set_extension<S: AsRef<OsStr>>(&mut self, extension: S) -> bool"), "set_extension($0)"),
+            ("as_path", "method", Some("fn as_path(&self) -> &Path"), "as_path()"),
+            ("into_boxed_path", "method", Some("fn into_boxed_path(self) -> Box<Path>"), "into_boxed_path()"),
+            ("into_os_string", "method", Some("fn into_os_string(self) -> OsString"), "into_os_string()"),
+            ("display", "method", Some("fn display(&self) -> Display<'_>"), "display()"),
+            ("is_file", "method", Some("fn is_file(&self) -> bool"), "is_file()"),
+            ("is_dir", "method", Some("fn is_dir(&self) -> bool"), "is_dir()"),
+            ("exists", "method", Some("fn exists(&self) -> bool"), "exists()"),
+            ("to_path_buf", "method", Some("fn to_path_buf(&self) -> PathBuf"), "to_path_buf()"),
+            ("parent", "method", Some("fn parent(&self) -> Option<&Path>"), "parent()"),
+            ("file_name", "method", Some("fn file_name(&self) -> Option<&OsStr>"), "file_name()"),
+            ("file_stem", "method", Some("fn file_stem(&self) -> Option<&OsStr>"), "file_stem()"),
+            ("extension", "method", Some("fn extension(&self) -> Option<&OsStr>"), "extension()"),
+            ("join", "method", Some("fn join<P: AsRef<Path>>(&self, path: P) -> PathBuf"), "join($0)"),
+            ("canonicalize", "method", Some("fn canonicalize(&self) -> io::Result<PathBuf>"), "canonicalize()"),
+        ],
+        "File" | "std::fs::File" | "fs::File" => &[
+            ("open", "function", Some("fn open<P: AsRef<Path>>(path: P) -> io::Result<File>"), "open($0)"),
+            ("create", "function", Some("fn create<P: AsRef<Path>>(path: P) -> io::Result<File>"), "create($0)"),
+            ("create_new", "function", Some("fn create_new<P: AsRef<Path>>(path: P) -> io::Result<File>"), "create_new($0)"),
+            ("options", "function", Some("fn options() -> OpenOptions"), "options()"),
+            ("sync_all", "method", Some("fn sync_all(&self) -> io::Result<()>"), "sync_all()"),
+            ("sync_data", "method", Some("fn sync_data(&self) -> io::Result<()>"), "sync_data()"),
+            ("set_len", "method", Some("fn set_len(&self, size: u64) -> io::Result<()>"), "set_len($0)"),
+            ("metadata", "method", Some("fn metadata(&self) -> io::Result<Metadata>"), "metadata()"),
+            ("try_clone", "method", Some("fn try_clone(&self) -> io::Result<File>"), "try_clone()"),
+            ("set_permissions", "method", Some("fn set_permissions(&self, perm: Permissions) -> io::Result<()>"), "set_permissions($0)"),
+        ],
+        "OpenOptions" | "std::fs::OpenOptions" | "fs::OpenOptions" => &[
+            ("new", "function", Some("fn new() -> OpenOptions"), "new()"),
+            ("read", "method", Some("fn read(&mut self, read: bool) -> &mut OpenOptions"), "read($0)"),
+            ("write", "method", Some("fn write(&mut self, write: bool) -> &mut OpenOptions"), "write($0)"),
+            ("append", "method", Some("fn append(&mut self, append: bool) -> &mut OpenOptions"), "append($0)"),
+            ("truncate", "method", Some("fn truncate(&mut self, truncate: bool) -> &mut OpenOptions"), "truncate($0)"),
+            ("create", "method", Some("fn create(&mut self, create: bool) -> &mut OpenOptions"), "create($0)"),
+            ("create_new", "method", Some("fn create_new(&mut self, create_new: bool) -> &mut OpenOptions"), "create_new($0)"),
+            ("open", "method", Some("fn open<P: AsRef<Path>>(&self, path: P) -> io::Result<File>"), "open($0)"),
+        ],
+        "BufReader" | "std::io::BufReader" | "io::BufReader" => &[
+            ("new", "function", Some("fn new(inner: R) -> BufReader<R>"), "new($0)"),
+            ("with_capacity", "function", Some("fn with_capacity(capacity: usize, inner: R) -> BufReader<R>"), "with_capacity($0)"),
+            ("get_ref", "method", Some("fn get_ref(&self) -> &R"), "get_ref()"),
+            ("get_mut", "method", Some("fn get_mut(&mut self) -> &mut R"), "get_mut()"),
+            ("into_inner", "method", Some("fn into_inner(self) -> R"), "into_inner()"),
+            ("buffer", "method", Some("fn buffer(&self) -> &[u8]"), "buffer()"),
+            ("capacity", "method", Some("fn capacity(&self) -> usize"), "capacity()"),
+        ],
+        "BufWriter" | "std::io::BufWriter" | "io::BufWriter" => &[
+            ("new", "function", Some("fn new(inner: W) -> BufWriter<W>"), "new($0)"),
+            ("with_capacity", "function", Some("fn with_capacity(capacity: usize, inner: W) -> BufWriter<W>"), "with_capacity($0)"),
+            ("get_ref", "method", Some("fn get_ref(&self) -> &W"), "get_ref()"),
+            ("get_mut", "method", Some("fn get_mut(&mut self) -> &mut W"), "get_mut()"),
+            ("into_inner", "method", Some("fn into_inner(self) -> Result<W, IntoInnerError<BufWriter<W>>>"), "into_inner()"),
+            ("buffer", "method", Some("fn buffer(&self) -> &[u8]"), "buffer()"),
+            ("capacity", "method", Some("fn capacity(&self) -> usize"), "capacity()"),
+        ],
+        "Arc" | "std::sync::Arc" | "sync::Arc" => &[
+            ("new", "function", Some("fn new(data: T) -> Arc<T>"), "new($0)"),
+            ("clone", "function", Some("fn clone(this: &Arc<T>) -> Arc<T>"), "clone($0)"),
+            ("try_unwrap", "function", Some("fn try_unwrap(this: Arc<T>) -> Result<T, Arc<T>>"), "try_unwrap($0)"),
+            ("strong_count", "function", Some("fn strong_count(this: &Arc<T>) -> usize"), "strong_count($0)"),
+            ("weak_count", "function", Some("fn weak_count(this: &Arc<T>) -> usize"), "weak_count($0)"),
+            ("get_mut", "function", Some("fn get_mut(this: &mut Arc<T>) -> Option<&mut T>"), "get_mut($0)"),
+            ("make_mut", "function", Some("fn make_mut(this: &mut Arc<T>) -> &mut T"), "make_mut($0)"),
+            ("downgrade", "function", Some("fn downgrade(this: &Arc<T>) -> Weak<T>"), "downgrade($0)"),
+            ("into_raw", "function", Some("fn into_raw(this: Arc<T>) -> *const T"), "into_raw($0)"),
+            ("from_raw", "function", Some("unsafe fn from_raw(ptr: *const T) -> Arc<T>"), "from_raw($0)"),
+        ],
+        "Mutex" | "std::sync::Mutex" | "sync::Mutex" => &[
+            ("new", "function", Some("fn new(t: T) -> Mutex<T>"), "new($0)"),
+            ("lock", "method", Some("fn lock(&self) -> LockResult<MutexGuard<'_, T>>"), "lock()"),
+            ("try_lock", "method", Some("fn try_lock(&self) -> TryLockResult<MutexGuard<'_, T>>"), "try_lock()"),
+            ("into_inner", "method", Some("fn into_inner(self) -> LockResult<T>"), "into_inner()"),
+            ("get_mut", "method", Some("fn get_mut(&mut self) -> LockResult<&mut T>"), "get_mut()"),
+            ("is_poisoned", "method", Some("fn is_poisoned(&self) -> bool"), "is_poisoned()"),
+        ],
+        "RwLock" | "std::sync::RwLock" | "sync::RwLock" => &[
+            ("new", "function", Some("fn new(t: T) -> RwLock<T>"), "new($0)"),
+            ("read", "method", Some("fn read(&self) -> LockResult<RwLockReadGuard<'_, T>>"), "read()"),
+            ("try_read", "method", Some("fn try_read(&self) -> TryLockResult<RwLockReadGuard<'_, T>>"), "try_read()"),
+            ("write", "method", Some("fn write(&self) -> LockResult<RwLockWriteGuard<'_, T>>"), "write()"),
+            ("try_write", "method", Some("fn try_write(&self) -> TryLockResult<RwLockWriteGuard<'_, T>>"), "try_write()"),
+            ("into_inner", "method", Some("fn into_inner(self) -> LockResult<T>"), "into_inner()"),
+            ("get_mut", "method", Some("fn get_mut(&mut self) -> LockResult<&mut T>"), "get_mut()"),
+            ("is_poisoned", "method", Some("fn is_poisoned(&self) -> bool"), "is_poisoned()"),
+        ],
+        "Box" | "std::boxed::Box" | "boxed::Box" => &[
+            ("new", "function", Some("fn new(x: T) -> Box<T>"), "new($0)"),
+            ("pin", "function", Some("fn pin(x: T) -> Pin<Box<T>>"), "pin($0)"),
+            ("into_raw", "function", Some("fn into_raw(b: Box<T>) -> *mut T"), "into_raw($0)"),
+            ("from_raw", "function", Some("unsafe fn from_raw(raw: *mut T) -> Box<T>"), "from_raw($0)"),
+            ("leak", "function", Some("fn leak<'a>(b: Box<T>) -> &'a mut T"), "leak($0)"),
+        ],
+        "Rc" | "std::rc::Rc" | "rc::Rc" => &[
+            ("new", "function", Some("fn new(value: T) -> Rc<T>"), "new($0)"),
+            ("clone", "function", Some("fn clone(this: &Rc<T>) -> Rc<T>"), "clone($0)"),
+            ("try_unwrap", "function", Some("fn try_unwrap(this: Rc<T>) -> Result<T, Rc<T>>"), "try_unwrap($0)"),
+            ("strong_count", "function", Some("fn strong_count(this: &Rc<T>) -> usize"), "strong_count($0)"),
+            ("weak_count", "function", Some("fn weak_count(this: &Rc<T>) -> usize"), "weak_count($0)"),
+            ("downgrade", "function", Some("fn downgrade(this: &Rc<T>) -> Weak<T>"), "downgrade($0)"),
+        ],
+        "Cell" | "std::cell::Cell" | "cell::Cell" => &[
+            ("new", "function", Some("fn new(value: T) -> Cell<T>"), "new($0)"),
+            ("get", "method", Some("fn get(&self) -> T where T: Copy"), "get()"),
+            ("set", "method", Some("fn set(&self, val: T)"), "set($0)"),
+            ("replace", "method", Some("fn replace(&self, val: T) -> T"), "replace($0)"),
+            ("take", "method", Some("fn take(&self) -> T where T: Default"), "take()"),
+            ("into_inner", "method", Some("fn into_inner(self) -> T"), "into_inner()"),
+        ],
+        "RefCell" | "std::cell::RefCell" | "cell::RefCell" => &[
+            ("new", "function", Some("fn new(value: T) -> RefCell<T>"), "new($0)"),
+            ("borrow", "method", Some("fn borrow(&self) -> Ref<'_, T>"), "borrow()"),
+            ("borrow_mut", "method", Some("fn borrow_mut(&self) -> RefMut<'_, T>"), "borrow_mut()"),
+            ("try_borrow", "method", Some("fn try_borrow(&self) -> Result<Ref<'_, T>, BorrowError>"), "try_borrow()"),
+            ("try_borrow_mut", "method", Some("fn try_borrow_mut(&self) -> Result<RefMut<'_, T>, BorrowMutError>"), "try_borrow_mut()"),
+            ("replace", "method", Some("fn replace(&self, t: T) -> T"), "replace($0)"),
+            ("take", "method", Some("fn take(&self) -> T where T: Default"), "take()"),
+            ("into_inner", "method", Some("fn into_inner(self) -> T"), "into_inner()"),
+        ],
+        "Duration" | "std::time::Duration" | "time::Duration" => &[
+            ("from_secs", "function", Some("fn from_secs(secs: u64) -> Duration"), "from_secs($0)"),
+            ("from_millis", "function", Some("fn from_millis(millis: u64) -> Duration"), "from_millis($0)"),
+            ("from_micros", "function", Some("fn from_micros(micros: u64) -> Duration"), "from_micros($0)"),
+            ("from_nanos", "function", Some("fn from_nanos(nanos: u64) -> Duration"), "from_nanos($0)"),
+            ("from_secs_f64", "function", Some("fn from_secs_f64(secs: f64) -> Duration"), "from_secs_f64($0)"),
+            ("from_secs_f32", "function", Some("fn from_secs_f32(secs: f32) -> Duration"), "from_secs_f32($0)"),
+            ("as_secs", "method", Some("fn as_secs(&self) -> u64"), "as_secs()"),
+            ("as_millis", "method", Some("fn as_millis(&self) -> u128"), "as_millis()"),
+            ("as_micros", "method", Some("fn as_micros(&self) -> u128"), "as_micros()"),
+            ("as_nanos", "method", Some("fn as_nanos(&self) -> u128"), "as_nanos()"),
+            ("as_secs_f64", "method", Some("fn as_secs_f64(&self) -> f64"), "as_secs_f64()"),
+            ("is_zero", "method", Some("fn is_zero(&self) -> bool"), "is_zero()"),
+            ("checked_add", "method", Some("fn checked_add(self, rhs: Duration) -> Option<Duration>"), "checked_add($0)"),
+            ("checked_sub", "method", Some("fn checked_sub(self, rhs: Duration) -> Option<Duration>"), "checked_sub($0)"),
+            ("MAX", "constant", Some("pub const MAX: Duration"), "MAX"),
+            ("ZERO", "constant", Some("pub const ZERO: Duration"), "ZERO"),
+        ],
+        "Instant" | "std::time::Instant" | "time::Instant" => &[
+            ("now", "function", Some("fn now() -> Instant"), "now()"),
+            ("elapsed", "method", Some("fn elapsed(&self) -> Duration"), "elapsed()"),
+            ("duration_since", "method", Some("fn duration_since(&self, earlier: Instant) -> Duration"), "duration_since($0)"),
+            ("checked_duration_since", "method", Some("fn checked_duration_since(&self, earlier: Instant) -> Option<Duration>"), "checked_duration_since($0)"),
+            ("checked_add", "method", Some("fn checked_add(&self, duration: Duration) -> Option<Instant>"), "checked_add($0)"),
+            ("checked_sub", "method", Some("fn checked_sub(&self, duration: Duration) -> Option<Instant>"), "checked_sub($0)"),
+        ],
+        "Command" | "std::process::Command" | "process::Command" => &[
+            ("new", "function", Some("fn new<S: AsRef<OsStr>>(program: S) -> Command"), "new($0)"),
+            ("arg", "method", Some("fn arg<S: AsRef<OsStr>>(&mut self, arg: S) -> &mut Command"), "arg($0)"),
+            ("args", "method", Some("fn args<I, S>(&mut self, args: I) -> &mut Command"), "args($0)"),
+            ("env", "method", Some("fn env<K, V>(&mut self, key: K, val: V) -> &mut Command"), "env($0)"),
+            ("envs", "method", Some("fn envs<I, K, V>(&mut self, vars: I) -> &mut Command"), "envs($0)"),
+            ("current_dir", "method", Some("fn current_dir<P: AsRef<Path>>(&mut self, dir: P) -> &mut Command"), "current_dir($0)"),
+            ("stdin", "method", Some("fn stdin<T: Into<Stdio>>(&mut self, cfg: T) -> &mut Command"), "stdin($0)"),
+            ("stdout", "method", Some("fn stdout<T: Into<Stdio>>(&mut self, cfg: T) -> &mut Command"), "stdout($0)"),
+            ("stderr", "method", Some("fn stderr<T: Into<Stdio>>(&mut self, cfg: T) -> &mut Command"), "stderr($0)"),
+            ("spawn", "method", Some("fn spawn(&mut self) -> io::Result<Child>"), "spawn()"),
+            ("output", "method", Some("fn output(&mut self) -> io::Result<Output>"), "output()"),
+            ("status", "method", Some("fn status(&mut self) -> io::Result<ExitStatus>"), "status()"),
+        ],
+        "ExitCode" | "std::process::ExitCode" | "process::ExitCode" => &[
+            ("SUCCESS", "constant", Some("pub const SUCCESS: ExitCode"), "SUCCESS"),
+            ("FAILURE", "constant", Some("pub const FAILURE: ExitCode"), "FAILURE"),
+        ],
         "std" | "core" => &[
             ("fs", "module", Some("(std::fs) Filesystem manipulation operations"), "fs"),
             ("io", "module", Some("(std::io) Utilities for I/O and buffering"), "io"),
@@ -556,21 +939,21 @@ pub fn get_scoped_rust_completions(scope: &str, prefix: &str) -> Vec<CompletionI
             ("prelude", "module", Some("(std::prelude) Standard library prelude"), "prelude"),
         ],
         "std::fs" | "fs" => &[
-            ("read", "function", Some("fn read<P: AsRef<Path>>(path: P) -> io::Result<Vec<u8>>"), "read"),
-            ("read_to_string", "function", Some("fn read_to_string<P: AsRef<Path>>(path: P) -> io::Result<String>"), "read_to_string"),
-            ("write", "function", Some("fn write<P: AsRef<Path>, C: AsRef<[u8]>>(path: P, contents: C) -> io::Result<()>"), "write"),
-            ("read_dir", "function", Some("fn read_dir<P: AsRef<Path>>(path: P) -> io::Result<ReadDir>"), "read_dir"),
-            ("create_dir", "function", Some("fn create_dir<P: AsRef<Path>>(path: P) -> io::Result<()>"), "create_dir"),
-            ("create_dir_all", "function", Some("fn create_dir_all<P: AsRef<Path>>(path: P) -> io::Result<()>"), "create_dir_all"),
-            ("remove_file", "function", Some("fn remove_file<P: AsRef<Path>>(path: P) -> io::Result<()>"), "remove_file"),
-            ("remove_dir", "function", Some("fn remove_dir<P: AsRef<Path>>(path: P) -> io::Result<()>"), "remove_dir"),
-            ("remove_dir_all", "function", Some("fn remove_dir_all<P: AsRef<Path>>(path: P) -> io::Result<()>"), "remove_dir_all"),
-            ("copy", "function", Some("fn copy<P: AsRef<Path>, Q: AsRef<Path>>(from: P, to: Q) -> io::Result<u64>"), "copy"),
-            ("rename", "function", Some("fn rename<P: AsRef<Path>, Q: AsRef<Path>>(from: P, to: Q) -> io::Result<()>"), "rename"),
-            ("metadata", "function", Some("fn metadata<P: AsRef<Path>>(path: P) -> io::Result<Metadata>"), "metadata"),
-            ("symlink_metadata", "function", Some("fn symlink_metadata<P: AsRef<Path>>(path: P) -> io::Result<Metadata>"), "symlink_metadata"),
-            ("canonicalize", "function", Some("fn canonicalize<P: AsRef<Path>>(path: P) -> io::Result<PathBuf>"), "canonicalize"),
-            ("set_permissions", "function", Some("fn set_permissions<P: AsRef<Path>>(path: P, perm: Permissions) -> io::Result<()>"), "set_permissions"),
+            ("read", "function", Some("fn read<P: AsRef<Path>>(path: P) -> io::Result<Vec<u8>>"), "read($0)"),
+            ("read_to_string", "function", Some("fn read_to_string<P: AsRef<Path>>(path: P) -> io::Result<String>"), "read_to_string($0)"),
+            ("write", "function", Some("fn write<P: AsRef<Path>, C: AsRef<[u8]>>(path: P, contents: C) -> io::Result<()>"), "write($0)"),
+            ("read_dir", "function", Some("fn read_dir<P: AsRef<Path>>(path: P) -> io::Result<ReadDir>"), "read_dir($0)"),
+            ("create_dir", "function", Some("fn create_dir<P: AsRef<Path>>(path: P) -> io::Result<()>"), "create_dir($0)"),
+            ("create_dir_all", "function", Some("fn create_dir_all<P: AsRef<Path>>(path: P) -> io::Result<()>"), "create_dir_all($0)"),
+            ("remove_file", "function", Some("fn remove_file<P: AsRef<Path>>(path: P) -> io::Result<()>"), "remove_file($0)"),
+            ("remove_dir", "function", Some("fn remove_dir<P: AsRef<Path>>(path: P) -> io::Result<()>"), "remove_dir($0)"),
+            ("remove_dir_all", "function", Some("fn remove_dir_all<P: AsRef<Path>>(path: P) -> io::Result<()>"), "remove_dir_all($0)"),
+            ("copy", "function", Some("fn copy<P: AsRef<Path>, Q: AsRef<Path>>(from: P, to: Q) -> io::Result<u64>"), "copy($0)"),
+            ("rename", "function", Some("fn rename<P: AsRef<Path>, Q: AsRef<Path>>(from: P, to: Q) -> io::Result<()>"), "rename($0)"),
+            ("metadata", "function", Some("fn metadata<P: AsRef<Path>>(path: P) -> io::Result<Metadata>"), "metadata($0)"),
+            ("symlink_metadata", "function", Some("fn symlink_metadata<P: AsRef<Path>>(path: P) -> io::Result<Metadata>"), "symlink_metadata($0)"),
+            ("canonicalize", "function", Some("fn canonicalize<P: AsRef<Path>>(path: P) -> io::Result<PathBuf>"), "canonicalize($0)"),
+            ("set_permissions", "function", Some("fn set_permissions<P: AsRef<Path>>(path: P, perm: Permissions) -> io::Result<()>"), "set_permissions($0)"),
             ("File", "struct", Some("pub struct File"), "File"),
             ("OpenOptions", "struct", Some("pub struct OpenOptions"), "OpenOptions"),
             ("DirEntry", "struct", Some("pub struct DirEntry"), "DirEntry"),
@@ -580,13 +963,13 @@ pub fn get_scoped_rust_completions(scope: &str, prefix: &str) -> Vec<CompletionI
             ("FileType", "struct", Some("pub struct FileType"), "FileType"),
         ],
         "std::io" | "io" => &[
-            ("stdin", "function", Some("fn stdin() -> Stdin"), "stdin"),
-            ("stdout", "function", Some("fn stdout() -> Stdout"), "stdout"),
-            ("stderr", "function", Some("fn stderr() -> Stderr"), "stderr"),
-            ("copy", "function", Some("fn copy<R: ?Sized, W: ?Sized>(reader: &mut R, writer: &mut W) -> Result<u64>"), "copy"),
-            ("empty", "function", Some("fn empty() -> Empty"), "empty"),
-            ("repeat", "function", Some("fn repeat(byte: u8) -> Repeat"), "repeat"),
-            ("sink", "function", Some("fn sink() -> Sink"), "sink"),
+            ("stdin", "function", Some("fn stdin() -> Stdin"), "stdin()"),
+            ("stdout", "function", Some("fn stdout() -> Stdout"), "stdout()"),
+            ("stderr", "function", Some("fn stderr() -> Stderr"), "stderr()"),
+            ("copy", "function", Some("fn copy<R: ?Sized, W: ?Sized>(reader: &mut R, writer: &mut W) -> Result<u64>"), "copy($0)"),
+            ("empty", "function", Some("fn empty() -> Empty"), "empty()"),
+            ("repeat", "function", Some("fn repeat(byte: u8) -> Repeat"), "repeat($0)"),
+            ("sink", "function", Some("fn sink() -> Sink"), "sink()"),
             ("Read", "interface", Some("pub trait Read"), "Read"),
             ("Write", "interface", Some("pub trait Write"), "Write"),
             ("BufRead", "interface", Some("pub trait BufRead: Read"), "BufRead"),
@@ -608,7 +991,7 @@ pub fn get_scoped_rust_completions(scope: &str, prefix: &str) -> Vec<CompletionI
             ("Component", "enum", Some("pub enum Component<'a>"), "Component"),
             ("Components", "struct", Some("pub struct Components<'a>"), "Components"),
             ("Prefix", "enum", Some("pub enum Prefix<'a>"), "Prefix"),
-            ("is_separator", "function", Some("fn is_separator(c: char) -> bool"), "is_separator"),
+            ("is_separator", "function", Some("fn is_separator(c: char) -> bool"), "is_separator($0)"),
             ("MAIN_SEPARATOR", "constant", Some("pub const MAIN_SEPARATOR: char"), "MAIN_SEPARATOR"),
         ],
         "std::collections" | "collections" => &[
@@ -625,18 +1008,18 @@ pub fn get_scoped_rust_completions(scope: &str, prefix: &str) -> Vec<CompletionI
             ("btree_set", "module", Some("pub mod btree_set"), "btree_set"),
         ],
         "std::env" | "env" => &[
-            ("args", "function", Some("fn args() -> Args"), "args"),
-            ("args_os", "function", Some("fn args_os() -> ArgsOs"), "args_os"),
-            ("var", "function", Some("fn var<K: AsRef<OsStr>>(key: K) -> Result<String, VarError>"), "var"),
-            ("var_os", "function", Some("fn var_os<K: AsRef<OsStr>>(key: K) -> Option<OsString>"), "var_os"),
-            ("set_var", "function", Some("fn set_var<K: AsRef<OsStr>, V: AsRef<OsStr>>(k: K, v: V)"), "set_var"),
-            ("remove_var", "function", Some("fn remove_var<K: AsRef<OsStr>>(k: K)"), "remove_var"),
-            ("current_dir", "function", Some("fn current_dir() -> io::Result<PathBuf>"), "current_dir"),
-            ("set_current_dir", "function", Some("fn set_current_dir<P: AsRef<Path>>(path: P) -> io::Result<()>"), "set_current_dir"),
-            ("temp_dir", "function", Some("fn temp_dir() -> PathBuf"), "temp_dir"),
-            ("current_exe", "function", Some("fn current_exe() -> io::Result<PathBuf>"), "current_exe"),
-            ("split_paths", "function", Some("fn split_paths<T: AsRef<OsStr> + ?Sized>(unparsed: &T) -> SplitPaths<'_>"), "split_paths"),
-            ("join_paths", "function", Some("fn join_paths<I, T>(paths: I) -> Result<OsString, JoinPathsError>"), "join_paths"),
+            ("args", "function", Some("fn args() -> Args"), "args()"),
+            ("args_os", "function", Some("fn args_os() -> ArgsOs"), "args_os()"),
+            ("var", "function", Some("fn var<K: AsRef<OsStr>>(key: K) -> Result<String, VarError>"), "var($0)"),
+            ("var_os", "function", Some("fn var_os<K: AsRef<OsStr>>(key: K) -> Option<OsString>"), "var_os($0)"),
+            ("set_var", "function", Some("fn set_var<K: AsRef<OsStr>, V: AsRef<OsStr>>(k: K, v: V)"), "set_var($0)"),
+            ("remove_var", "function", Some("fn remove_var<K: AsRef<OsStr>>(k: K)"), "remove_var($0)"),
+            ("current_dir", "function", Some("fn current_dir() -> io::Result<PathBuf>"), "current_dir()"),
+            ("set_current_dir", "function", Some("fn set_current_dir<P: AsRef<Path>>(path: P) -> io::Result<()>"), "set_current_dir($0)"),
+            ("temp_dir", "function", Some("fn temp_dir() -> PathBuf"), "temp_dir()"),
+            ("current_exe", "function", Some("fn current_exe() -> io::Result<PathBuf>"), "current_exe()"),
+            ("split_paths", "function", Some("fn split_paths<T: AsRef<OsStr> + ?Sized>(unparsed: &T) -> SplitPaths<'_>"), "split_paths($0)"),
+            ("join_paths", "function", Some("fn join_paths<I, T>(paths: I) -> Result<OsString, JoinPathsError>"), "join_paths($0)"),
             ("Args", "struct", Some("pub struct Args"), "Args"),
             ("Vars", "struct", Some("pub struct Vars"), "Vars"),
             ("VarError", "enum", Some("pub enum VarError"), "VarError"),
@@ -651,9 +1034,9 @@ pub fn get_scoped_rust_completions(scope: &str, prefix: &str) -> Vec<CompletionI
             ("ExitStatus", "struct", Some("pub struct ExitStatus"), "ExitStatus"),
             ("Output", "struct", Some("pub struct Output"), "Output"),
             ("Stdio", "struct", Some("pub struct Stdio"), "Stdio"),
-            ("id", "function", Some("fn id() -> u32"), "id"),
-            ("exit", "function", Some("fn exit(code: i32) -> !"), "exit"),
-            ("abort", "function", Some("fn abort() -> !"), "abort"),
+            ("id", "function", Some("fn id() -> u32"), "id()"),
+            ("exit", "function", Some("fn exit(code: i32) -> !"), "exit($0)"),
+            ("abort", "function", Some("fn abort() -> !"), "abort()"),
         ],
         "std::sync" | "sync" => &[
             ("Arc", "struct", Some("pub struct Arc<T: ?Sized>"), "Arc"),
@@ -684,8 +1067,8 @@ pub fn get_scoped_rust_completions(scope: &str, prefix: &str) -> Vec<CompletionI
             ("AtomicUsize", "struct", Some("pub struct AtomicUsize"), "AtomicUsize"),
             ("AtomicPtr", "struct", Some("pub struct AtomicPtr<T>"), "AtomicPtr"),
             ("Ordering", "enum", Some("pub enum Ordering { Relaxed, Release, Acquire, AcqRel, SeqCst }"), "Ordering"),
-            ("fence", "function", Some("fn fence(order: Ordering)"), "fence"),
-            ("compiler_fence", "function", Some("fn compiler_fence(order: Ordering)"), "compiler_fence"),
+            ("fence", "function", Some("fn fence(order: Ordering)"), "fence($0)"),
+            ("compiler_fence", "function", Some("fn compiler_fence(order: Ordering)"), "compiler_fence($0)"),
         ],
         "std::time" | "time" => &[
             ("Duration", "struct", Some("pub struct Duration"), "Duration"),
@@ -705,16 +1088,45 @@ pub fn get_scoped_rust_completions(scope: &str, prefix: &str) -> Vec<CompletionI
             ("format_args!", "function", Some("macro format_args!"), "format_args!"),
         ],
         "std::thread" | "thread" => &[
-            ("spawn", "function", Some("fn spawn<F, T>(f: F) -> JoinHandle<T>"), "spawn"),
-            ("sleep", "function", Some("fn sleep(dur: Duration)"), "sleep"),
-            ("yield_now", "function", Some("fn yield_now()"), "yield_now"),
-            ("current", "function", Some("fn current() -> Thread"), "current"),
-            ("park", "function", Some("fn park()"), "park"),
+            ("spawn", "function", Some("fn spawn<F, T>(f: F) -> JoinHandle<T>"), "spawn($0)"),
+            ("sleep", "function", Some("fn sleep(dur: Duration)"), "sleep($0)"),
+            ("yield_now", "function", Some("fn yield_now()"), "yield_now()"),
+            ("current", "function", Some("fn current() -> Thread"), "current()"),
+            ("park", "function", Some("fn park()"), "park()"),
             ("JoinHandle", "struct", Some("pub struct JoinHandle<T>"), "JoinHandle"),
             ("Thread", "struct", Some("pub struct Thread"), "Thread"),
             ("Builder", "struct", Some("pub struct Builder"), "Builder"),
             ("Scope", "struct", Some("pub struct Scope<'scope, 'env>"), "Scope"),
-            ("scope", "function", Some("fn scope<'env, F, T>(f: F) -> T"), "scope"),
+            ("scope", "function", Some("fn scope<'env, F, T>(f: F) -> T"), "scope($0)"),
+        ],
+        "std::mem" | "mem" => &[
+            ("size_of", "function", Some("fn size_of<T>() -> usize"), "size_of::<${1:T}>()"),
+            ("size_of_val", "function", Some("fn size_of_val<T: ?Sized>(val: &T) -> usize"), "size_of_val($0)"),
+            ("align_of", "function", Some("fn align_of<T>() -> usize"), "align_of::<${1:T}>()"),
+            ("drop", "function", Some("fn drop<T>(_x: T)"), "drop($0)"),
+            ("replace", "function", Some("fn replace<T>(dest: &mut T, src: T) -> T"), "replace($0)"),
+            ("swap", "function", Some("fn swap<T>(x: &mut T, y: &mut T)"), "swap($0)"),
+            ("take", "function", Some("fn take<T: Default>(dest: &mut T) -> T"), "take($0)"),
+            ("forget", "function", Some("fn forget<T>(t: T)"), "forget($0)"),
+            ("transmute", "function", Some("unsafe fn transmute<Src, Dst>(src: Src) -> Dst"), "transmute($0)"),
+            ("zeroed", "function", Some("unsafe fn zeroed<T>() -> T"), "zeroed()"),
+        ],
+        "std::ptr" | "ptr" => &[
+            ("null", "function", Some("fn null<T>() -> *const T"), "null()"),
+            ("null_mut", "function", Some("fn null_mut<T>() -> *mut T"), "null_mut()"),
+            ("read", "function", Some("unsafe fn read<T>(src: *const T) -> T"), "read($0)"),
+            ("write", "function", Some("unsafe fn write<T>(dst: *mut T, src: T)"), "write($0)"),
+            ("copy", "function", Some("unsafe fn copy<T>(src: *const T, dst: *mut T, count: usize)"), "copy($0)"),
+            ("copy_nonoverlapping", "function", Some("unsafe fn copy_nonoverlapping<T>(src: *const T, dst: *mut T, count: usize)"), "copy_nonoverlapping($0)"),
+            ("eq", "function", Some("fn eq<T: ?Sized>(a: *const T, b: *const T) -> bool"), "eq($0)"),
+        ],
+        "std::iter" | "iter" => &[
+            ("once", "function", Some("fn once<T>(value: T) -> Once<T>"), "once($0)"),
+            ("repeat", "function", Some("fn repeat<T: Clone>(elt: T) -> Repeat<T>"), "repeat($0)"),
+            ("empty", "function", Some("fn empty<T>() -> Empty<T>"), "empty()"),
+            ("from_fn", "function", Some("fn from_fn<T, F>(f: F) -> FromFn<F>"), "from_fn($0)"),
+            ("successors", "function", Some("fn successors<T, F>(first: Option<T>, succ: F) -> Successors<T, F>"), "successors($0)"),
+            ("zip", "function", Some("fn zip<A, B>(a: A, b: B) -> Zip<A::IntoIter, B::IntoIter>"), "zip($0)"),
         ],
         _ => &[],
     };
@@ -765,6 +1177,326 @@ pub fn extract_tree_sitter_symbols(
     }
 
     filtered
+}
+
+/// Extracts symbol definitions scoped to a struct, enum, trait, or module from Tree-sitter AST
+pub fn extract_tree_sitter_scoped_symbols(
+    tree: Option<&tree_sitter::Tree>,
+    lines: &[String],
+    scope: &str,
+    prefix: &str,
+) -> Vec<CompletionItem> {
+    let mut symbols = Vec::new();
+    let clean_scope = scope.trim().trim_end_matches(':');
+    let scope_ident = clean_scope.split("::").last().unwrap_or(clean_scope);
+    let p_lower = prefix.to_lowercase();
+
+    if let Some(t) = tree {
+        collect_ast_scoped_symbols(t.root_node(), lines, scope_ident, &mut symbols);
+    }
+
+    let mut filtered = Vec::new();
+    let mut seen = std::collections::HashSet::new();
+
+    for item in symbols {
+        if seen.insert(item.label.clone()) {
+            let l_lower = item.label.to_lowercase();
+            if p_lower.is_empty()
+                || l_lower.starts_with(&p_lower)
+                || l_lower.contains(&p_lower)
+                || is_subsequence(&p_lower, &l_lower)
+            {
+                filtered.push(item);
+            }
+        }
+    }
+
+    filtered
+}
+
+fn collect_ast_scoped_symbols(
+    node: tree_sitter::Node,
+    lines: &[String],
+    scope: &str,
+    symbols: &mut Vec<CompletionItem>,
+) {
+    let kind = node.kind();
+    match kind {
+        "impl_item" => {
+            let type_match = node.child_by_field_name("type").map(|t| {
+                let txt = get_node_text(t, lines);
+                let ident = txt.split('<').next().unwrap_or(&txt).trim();
+                ident.split("::").last().unwrap_or(ident) == scope
+            }).unwrap_or(false);
+
+            if type_match
+                && let Some(body) = node.child_by_field_name("body")
+            {
+                for i in 0..body.child_count() {
+                    if let Some(child) = body.child(i) {
+                        if child.kind() == "function_item" {
+                            if let Some(name_node) = child.child_by_field_name("name") {
+                                let name = get_node_text(name_node, lines);
+                                let params = child
+                                    .child_by_field_name("parameters")
+                                    .map(|p| get_node_text(p, lines))
+                                    .unwrap_or_default();
+                                let ret = child
+                                    .child_by_field_name("return_type")
+                                    .map(|r| format!(" -> {}", get_node_text(r, lines)))
+                                    .unwrap_or_default();
+                                let is_method = params.contains("self");
+                                symbols.push(CompletionItem {
+                                    label: name.clone(),
+                                    detail: Some(format!("fn {name}{params}{ret}")),
+                                    kind_name: if is_method { "method" } else { "function" }.to_string(),
+                                    insert_text: Some(if params.trim() == "()" || params.trim() == "(&self)" || params.trim() == "(&mut self)" || params.trim() == "(self)" {
+                                        format!("{name}()")
+                                    } else {
+                                        format!("{name}($0)")
+                                    }),
+                                });
+                            }
+                        } else if child.kind() == "const_item" {
+                            if let Some(name_node) = child.child_by_field_name("name") {
+                                let name = get_node_text(name_node, lines);
+                                symbols.push(CompletionItem {
+                                    label: name.clone(),
+                                    detail: Some(format!("const {name}")),
+                                    kind_name: "constant".to_string(),
+                                    insert_text: Some(name),
+                                });
+                            }
+                        } else if child.kind() == "type_item"
+                            && let Some(name_node) = child.child_by_field_name("name")
+                        {
+                            let name = get_node_text(name_node, lines);
+                            symbols.push(CompletionItem {
+                                label: name.clone(),
+                                detail: Some(format!("type {name}")),
+                                kind_name: "type".to_string(),
+                                insert_text: Some(name),
+                            });
+                        }
+                    }
+                }
+            }
+        }
+        "enum_item" => {
+            let name_match = node.child_by_field_name("name").map(|n| {
+                get_node_text(n, lines) == scope
+            }).unwrap_or(false);
+
+            if name_match {
+                for i in 0..node.child_count() {
+                    if let Some(child) = node.child(i)
+                        && child.kind() == "enum_variant_list"
+                    {
+                        for j in 0..child.child_count() {
+                            if let Some(variant) = child.child(j)
+                                && variant.kind() == "enum_variant"
+                                && let Some(vname) = variant.child_by_field_name("name")
+                            {
+                                let name = get_node_text(vname, lines);
+                                symbols.push(CompletionItem {
+                                    label: name.clone(),
+                                    detail: Some(format!("enum variant {scope}::{name}")),
+                                    kind_name: "enum_member".to_string(),
+                                    insert_text: Some(name),
+                                });
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        "mod_item" => {
+            let mod_match = node.child_by_field_name("name").map(|n| {
+                get_node_text(n, lines) == scope
+            }).unwrap_or(false);
+
+            if mod_match
+                && let Some(body) = node.child_by_field_name("body")
+            {
+                for i in 0..body.child_count() {
+                    if let Some(child) = body.child(i) {
+                        collect_ast_symbols(child, lines, symbols);
+                    }
+                }
+            }
+        }
+        _ => {}
+    }
+
+    for i in 0..node.child_count() {
+        if let Some(child) = node.child(i) {
+            collect_ast_scoped_symbols(child, lines, scope, symbols);
+        }
+    }
+}
+
+/// Provides method completions for dot `.` expressions (e.g. `s.`, `vec.`, `path.`, `self.`)
+pub fn get_method_completions(receiver: &str, prefix: &str) -> Vec<CompletionItem> {
+    let r_lower = receiver.to_lowercase();
+
+    let string_methods: &[(&str, &str, Option<&str>, &str)] = &[
+        ("len", "method", Some("fn len(&self) -> usize"), "len()"),
+        ("is_empty", "method", Some("fn is_empty(&self) -> bool"), "is_empty()"),
+        ("as_str", "method", Some("fn as_str(&self) -> &str"), "as_str()"),
+        ("as_bytes", "method", Some("fn as_bytes(&self) -> &[u8]"), "as_bytes()"),
+        ("chars", "method", Some("fn chars(&self) -> Chars<'_>"), "chars()"),
+        ("bytes", "method", Some("fn bytes(&self) -> Bytes<'_>"), "bytes()"),
+        ("lines", "method", Some("fn lines(&self) -> Lines<'_>"), "lines()"),
+        ("split", "method", Some("fn split<'a, P>(&'a self, pat: P) -> Split<'a, P>"), "split($0)"),
+        ("split_whitespace", "method", Some("fn split_whitespace(&self) -> SplitWhitespace<'_>"), "split_whitespace()"),
+        ("trim", "method", Some("fn trim(&self) -> &str"), "trim()"),
+        ("trim_start", "method", Some("fn trim_start(&self) -> &str"), "trim_start()"),
+        ("trim_end", "method", Some("fn trim_end(&self) -> &str"), "trim_end()"),
+        ("contains", "method", Some("fn contains<P: Pattern>(&self, pat: P) -> bool"), "contains($0)"),
+        ("starts_with", "method", Some("fn starts_with<P: Pattern>(&self, pat: P) -> bool"), "starts_with($0)"),
+        ("ends_with", "method", Some("fn ends_with<P: Pattern>(&self, pat: P) -> bool"), "ends_with($0)"),
+        ("find", "method", Some("fn find<P: Pattern>(&self, pat: P) -> Option<usize>"), "find($0)"),
+        ("replace", "method", Some("fn replace<P: Pattern>(&self, from: P, to: &str) -> String"), "replace($0)"),
+        ("to_lowercase", "method", Some("fn to_lowercase(&self) -> String"), "to_lowercase()"),
+        ("to_uppercase", "method", Some("fn to_uppercase(&self) -> String"), "to_uppercase()"),
+        ("push", "method", Some("fn push(&mut self, ch: char)"), "push($0)"),
+        ("push_str", "method", Some("fn push_str(&mut self, string: &str)"), "push_str($0)"),
+        ("pop", "method", Some("fn pop(&mut self) -> Option<char>"), "pop()"),
+        ("clear", "method", Some("fn clear(&mut self)"), "clear()"),
+        ("clone", "method", Some("fn clone(&self) -> Self"), "clone()"),
+        ("to_string", "method", Some("fn to_string(&self) -> String"), "to_string()"),
+    ];
+
+    let vec_methods: &[(&str, &str, Option<&str>, &str)] = &[
+        ("len", "method", Some("fn len(&self) -> usize"), "len()"),
+        ("is_empty", "method", Some("fn is_empty(&self) -> bool"), "is_empty()"),
+        ("push", "method", Some("fn push(&mut self, value: T)"), "push($0)"),
+        ("pop", "method", Some("fn pop(&mut self) -> Option<T>"), "pop()"),
+        ("insert", "method", Some("fn insert(&mut self, index: usize, element: T)"), "insert($0)"),
+        ("remove", "method", Some("fn remove(&mut self, index: usize) -> T"), "remove($0)"),
+        ("clear", "method", Some("fn clear(&mut self)"), "clear()"),
+        ("as_slice", "method", Some("fn as_slice(&self) -> &[T]"), "as_slice()"),
+        ("as_mut_slice", "method", Some("fn as_mut_slice(&mut self) -> &mut [T]"), "as_mut_slice()"),
+        ("iter", "method", Some("fn iter(&self) -> Iter<'_, T>"), "iter()"),
+        ("iter_mut", "method", Some("fn iter_mut(&mut self) -> IterMut<'_, T>"), "iter_mut()"),
+        ("into_iter", "method", Some("fn into_iter(self) -> IntoIter<T>"), "into_iter()"),
+        ("sort", "method", Some("fn sort(&mut self)"), "sort()"),
+        ("sort_by", "method", Some("fn sort_by<F>(&mut self, compare: F)"), "sort_by($0)"),
+        ("sort_by_key", "method", Some("fn sort_by_key<K, F>(&mut self, f: F)"), "sort_by_key($0)"),
+        ("dedup", "method", Some("fn dedup(&mut self)"), "dedup()"),
+        ("retain", "method", Some("fn retain<F>(&mut self, f: F)"), "retain($0)"),
+        ("contains", "method", Some("fn contains(&self, x: &T) -> bool"), "contains($0)"),
+        ("first", "method", Some("fn first(&self) -> Option<&T>"), "first()"),
+        ("last", "method", Some("fn last(&self) -> Option<&T>"), "last()"),
+        ("get", "method", Some("fn get(&self, index: usize) -> Option<&T>"), "get($0)"),
+        ("get_mut", "method", Some("fn get_mut(&mut self, index: usize) -> Option<&mut T>"), "get_mut($0)"),
+        ("clone", "method", Some("fn clone(&self) -> Self"), "clone()"),
+    ];
+
+    let option_result_methods: &[(&str, &str, Option<&str>, &str)] = &[
+        ("is_some", "method", Some("fn is_some(&self) -> bool"), "is_some()"),
+        ("is_none", "method", Some("fn is_none(&self) -> bool"), "is_none()"),
+        ("is_ok", "method", Some("fn is_ok(&self) -> bool"), "is_ok()"),
+        ("is_err", "method", Some("fn is_err(&self) -> bool"), "is_err()"),
+        ("unwrap", "method", Some("fn unwrap(self) -> T"), "unwrap()"),
+        ("unwrap_or", "method", Some("fn unwrap_or(self, default: T) -> T"), "unwrap_or($0)"),
+        ("unwrap_or_default", "method", Some("fn unwrap_or_default(self) -> T"), "unwrap_or_default()"),
+        ("unwrap_or_else", "method", Some("fn unwrap_or_else<F: FnOnce() -> T>(self, f: F) -> T"), "unwrap_or_else($0)"),
+        ("map", "method", Some("fn map<U, F: FnOnce(T) -> U>(self, f: F) -> Option<U>"), "map($0)"),
+        ("map_err", "method", Some("fn map_err<O, F: FnOnce(E) -> O>(self, op: F) -> Result<T, O>"), "map_err($0)"),
+        ("and_then", "method", Some("fn and_then<U, F>(self, f: F) -> Option<U>"), "and_then($0)"),
+        ("as_ref", "method", Some("fn as_ref(&self) -> Option<&T>"), "as_ref()"),
+        ("as_mut", "method", Some("fn as_mut(&mut self) -> Option<&mut T>"), "as_mut()"),
+        ("ok", "method", Some("fn ok(self) -> Option<T>"), "ok()"),
+        ("err", "method", Some("fn err(self) -> Option<E>"), "err()"),
+    ];
+
+    let path_file_methods: &[(&str, &str, Option<&str>, &str)] = &[
+        ("display", "method", Some("fn display(&self) -> Display<'_>"), "display()"),
+        ("to_str", "method", Some("fn to_str(&self) -> Option<&str>"), "to_str()"),
+        ("to_string_lossy", "method", Some("fn to_string_lossy(&self) -> Cow<'_, str>"), "to_string_lossy()"),
+        ("is_file", "method", Some("fn is_file(&self) -> bool"), "is_file()"),
+        ("is_dir", "method", Some("fn is_dir(&self) -> bool"), "is_dir()"),
+        ("exists", "method", Some("fn exists(&self) -> bool"), "exists()"),
+        ("parent", "method", Some("fn parent(&self) -> Option<&Path>"), "parent()"),
+        ("file_name", "method", Some("fn file_name(&self) -> Option<&OsStr>"), "file_name()"),
+        ("extension", "method", Some("fn extension(&self) -> Option<&OsStr>"), "extension()"),
+        ("join", "method", Some("fn join<P: AsRef<Path>>(&self, path: P) -> PathBuf"), "join($0)"),
+        ("push", "method", Some("fn push<P: AsRef<Path>>(&mut self, path: P)"), "push($0)"),
+        ("pop", "method", Some("fn pop(&mut self) -> bool"), "pop()"),
+        ("canonicalize", "method", Some("fn canonicalize(&self) -> io::Result<PathBuf>"), "canonicalize()"),
+        ("read", "method", Some("fn read(&mut self, buf: &mut [u8]) -> io::Result<usize>"), "read($0)"),
+        ("read_to_string", "method", Some("fn read_to_string(&mut self, buf: &mut String) -> io::Result<usize>"), "read_to_string($0)"),
+        ("write", "method", Some("fn write(&mut self, buf: &[u8]) -> io::Result<usize>"), "write($0)"),
+        ("write_all", "method", Some("fn write_all(&mut self, buf: &[u8]) -> io::Result<()>"), "write_all($0)"),
+        ("flush", "method", Some("fn flush(&mut self) -> io::Result<()>"), "flush()"),
+    ];
+
+    let iter_methods: &[(&str, &str, Option<&str>, &str)] = &[
+        ("map", "method", Some("fn map<B, F>(self, f: F) -> Map<Self, F>"), "map($0)"),
+        ("filter", "method", Some("fn filter<P>(self, predicate: P) -> Filter<Self, P>"), "filter($0)"),
+        ("collect", "method", Some("fn collect<B: FromIterator<Self::Item>>(self) -> B"), "collect()"),
+        ("for_each", "method", Some("fn for_each<F>(self, f: F)"), "for_each($0)"),
+        ("find", "method", Some("fn find<P>(&mut self, predicate: P) -> Option<Self::Item>"), "find($0)"),
+        ("any", "method", Some("fn any<F>(&mut self, f: F) -> bool"), "any($0)"),
+        ("all", "method", Some("fn all<F>(&mut self, f: F) -> bool"), "all($0)"),
+        ("count", "method", Some("fn count(self) -> usize"), "count()"),
+        ("enumerate", "method", Some("fn enumerate(self) -> Enumerate<Self>"), "enumerate()"),
+        ("zip", "method", Some("fn zip<U>(self, other: U) -> Zip<Self, U::IntoIter>"), "zip($0)"),
+        ("take", "method", Some("fn take(self, n: usize) -> Take<Self>"), "take($0)"),
+        ("skip", "method", Some("fn skip(self, n: usize) -> Skip<Self>"), "skip($0)"),
+        ("fold", "method", Some("fn fold<B, F>(self, init: B, f: F) -> B"), "fold($0)"),
+        ("cloned", "method", Some("fn cloned<'a, T: Clone>(self) -> Cloned<Self>"), "cloned()"),
+        ("copied", "method", Some("fn copied<'a, T: Copy>(self) -> Copied<Self>"), "copied()"),
+    ];
+
+    let mut items_pool: Vec<(&str, &str, Option<&str>, &str)> = Vec::new();
+
+    if r_lower.ends_with('s') || r_lower.contains("str") || r_lower.contains("text") || r_lower.contains("name") || r_lower.contains("line") || r_lower.contains("msg") {
+        items_pool.extend_from_slice(string_methods);
+    }
+    if r_lower.contains("vec") || r_lower.contains("list") || r_lower.contains("items") || r_lower.contains("lines") || r_lower.contains("buf") || r_lower.contains("entries") || r_lower.contains("chars") {
+        items_pool.extend_from_slice(vec_methods);
+    }
+    if r_lower.contains("opt") || r_lower.contains("res") || r_lower.contains("node") || r_lower.contains("child") || r_lower.contains("parent") || r_lower.contains("err") {
+        items_pool.extend_from_slice(option_result_methods);
+    }
+    if r_lower.contains("path") || r_lower.contains("file") || r_lower.contains("dir") || r_lower.contains("reader") || r_lower.contains("writer") {
+        items_pool.extend_from_slice(path_file_methods);
+    }
+    if r_lower.contains("iter") {
+        items_pool.extend_from_slice(iter_methods);
+    }
+
+    if items_pool.is_empty() || r_lower == "self" || r_lower == "x" || r_lower == "v" || r_lower == "it" || r_lower == "item" || r_lower == "res" {
+        items_pool.extend_from_slice(string_methods);
+        items_pool.extend_from_slice(vec_methods);
+        items_pool.extend_from_slice(option_result_methods);
+        items_pool.extend_from_slice(path_file_methods);
+        items_pool.extend_from_slice(iter_methods);
+    }
+
+    let mut scored_results: Vec<(u32, CompletionItem)> = Vec::new();
+    let mut seen = std::collections::HashSet::new();
+
+    for (label, kind, detail, insert) in items_pool {
+        if seen.insert(label)
+            && let Some(score) = fuzzy_match_score(prefix, label)
+        {
+            scored_results.push((
+                score,
+                CompletionItem {
+                    label: label.to_string(),
+                    detail: detail.map(String::from),
+                    kind_name: kind.to_string(),
+                    insert_text: Some(insert.to_string()),
+                },
+            ));
+        }
+    }
+
+    scored_results.sort_by_key(|a| std::cmp::Reverse(a.0));
+    scored_results.into_iter().map(|(_, item)| item).collect()
 }
 
 fn collect_ast_symbols(

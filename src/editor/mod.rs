@@ -311,8 +311,9 @@ impl Editor {
         let chars: Vec<char> = line.chars().collect();
         let cur_col = col.min(chars.len());
 
-        // Check for scoped path ending before cursor, e.g. "std::", "std::fs::", "collections::" (Rust only)
+        // Check for scoped path ending before cursor, e.g. "String::", "std::fs::", "collections::" (Rust only)
         let mut scope_path = None;
+        let mut dot_call = None;
         let mut filter_start = cur_col;
         while filter_start > 0
             && (chars[filter_start - 1].is_alphanumeric()
@@ -342,13 +343,52 @@ impl Editor {
             if !raw_scope.is_empty() {
                 scope_path = Some((raw_scope, filter_start, filter_prefix.clone()));
             }
+        } else if is_rust && filter_start >= 1 && chars[filter_start - 1] == '.' {
+            // Find receiver before '.'
+            let mut receiver_end = filter_start - 1;
+            while receiver_end > 0 && chars[receiver_end - 1].is_whitespace() {
+                receiver_end -= 1;
+            }
+            let mut receiver_start = receiver_end;
+            while receiver_start > 0 && (chars[receiver_start - 1].is_alphanumeric() || chars[receiver_start - 1] == '_') {
+                receiver_start -= 1;
+            }
+            let receiver: String = chars[receiver_start..receiver_end].iter().collect();
+            if !receiver.is_empty() {
+                dot_call = Some((receiver, filter_start, filter_prefix.clone()));
+            }
         }
 
         let (trigger_col, display_prefix, mut items) = if let Some((scope, f_start, f_prefix)) =
             scope_path
         {
-            let scoped_items = crate::lsp::get_scoped_rust_completions(&scope, &f_prefix);
+            let mut scoped_items = crate::lsp::get_scoped_rust_completions(&scope, &f_prefix);
+            let ast_scoped = crate::lsp::extract_tree_sitter_scoped_symbols(
+                buf.tree.as_ref(),
+                &buf.lines,
+                &scope,
+                &f_prefix,
+            );
+            for item in ast_scoped {
+                if !scoped_items.iter().any(|it| it.label == item.label) {
+                    scoped_items.push(item);
+                }
+            }
             (f_start, f_prefix, scoped_items)
+        } else if let Some((receiver, f_start, f_prefix)) = dot_call {
+            let mut method_items = crate::lsp::get_method_completions(&receiver, &f_prefix);
+            let ast_methods = crate::lsp::extract_tree_sitter_scoped_symbols(
+                buf.tree.as_ref(),
+                &buf.lines,
+                &receiver,
+                &f_prefix,
+            );
+            for item in ast_methods {
+                if !method_items.iter().any(|it| it.label == item.label) {
+                    method_items.push(item);
+                }
+            }
+            (f_start, f_prefix, method_items)
         } else if !filter_prefix.is_empty() {
             let mut general_items = if is_rust {
                 crate::lsp::get_standard_rust_completions(&filter_prefix)
@@ -398,25 +438,25 @@ impl Editor {
             (0, String::new(), Vec::new())
         };
 
-        if !items.is_empty() {
-            let lsp_client = if is_rust {
-                self.lsp.as_ref()
-            } else if is_toml {
-                self.toml_lsp.as_ref()
-            } else {
-                None
-            };
-            if let Some(lsp) = lsp_client {
-                let _ = lsp.request_completion(&buf.path, row, cur_col);
-                if let Some((_, lsp_items)) = lsp.get_completions() {
-                    for item in lsp_items {
-                        if !items.iter().any(|it| it.label == item.label) {
-                            items.insert(0, item);
-                        }
+        let lsp_client = if is_rust {
+            self.lsp.as_ref()
+        } else if is_toml {
+            self.toml_lsp.as_ref()
+        } else {
+            None
+        };
+        if let Some(lsp) = lsp_client {
+            let _ = lsp.request_completion(&buf.path, row, cur_col);
+            if let Some((_, lsp_items)) = lsp.get_completions() {
+                for item in lsp_items {
+                    if !items.iter().any(|it| it.label == item.label) {
+                        items.insert(0, item);
                     }
                 }
             }
+        }
 
+        if !items.is_empty() {
             self.completion.show(trigger_col, &display_prefix, items);
         } else {
             self.completion.close();
@@ -728,8 +768,14 @@ impl Editor {
         if let Some(lsp) = lsp_client
             && let Some((_, lsp_items)) = lsp.get_completions()
         {
+            let filter = self.completion.prefix.to_lowercase();
             for item in lsp_items {
-                if !self.completion.items.iter().any(|it| it.label == item.label) {
+                let l_lower = item.label.to_lowercase();
+                let matches_filter = filter.is_empty()
+                    || l_lower.starts_with(&filter)
+                    || l_lower.contains(&filter)
+                    || crate::lsp::fuzzy_match_score(&filter, &item.label).is_some();
+                if matches_filter && !self.completion.items.iter().any(|it| it.label == item.label) {
                     self.completion.items.push(item);
                 }
             }

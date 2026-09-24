@@ -268,8 +268,11 @@ hidden = false
 
 ### Phase 16 — Configurable Auto-Format & Real-Time Background LSP Reactivity
 - **Configurable Auto-Format**: Added `auto-format` / `auto_format` under `[editor]` configuration (defaulting to `true`). When enabled, buffers are automatically formatted on write (`:w`, `:wa`, `:wqa`, etc.) using `rustfmt` (for Rust) or `taplo` (for TOML) with fallback.
-- **Real-Time LSP Reactivity**: Fixed the issue where users had to press `<ESC>` to see LSP updates. Implemented `diag_version` and `completion_version` atomic version tracking in `LspClient`. The event loop polls these version counters every 30ms and triggers instant redrawing as soon as `publishDiagnostics` or `completion` responses arrive in the background thread.
-- **Comprehensive LSP Change Notifications**: Ensured `notify_lsp_change()` is called across all typing operations, word deletions, paste actions, undo/redo, comment toggling, and surround edits.
+### Phase 17 — Associated Functions, Methods, Scoped Modules & AST Completion
+- **Standard Type Associated Functions & Methods**: Added full associated function and method catalogs to `get_scoped_rust_completions` for standard types including `String::` (`new`, `from`, `with_capacity`, `from_utf8`, `from_utf8_lossy`, `from_utf8_unchecked`, `from_utf16`, `default`), `Vec::`, `Option::`, `Result::`, `HashMap::`, `HashSet::`, `BTreeMap`, `BTreeSet`, `Path::`, `PathBuf::`, `File::`, `Command::`, `Arc::`, `Mutex::`, `Duration::`, `Instant::`, `std::mem::`, `std::ptr::`, `std::iter::`, etc.
+- **Tree-sitter AST Scoped Symbols**: Implemented `extract_tree_sitter_scoped_symbols()` to inspect the active buffer's AST for `impl <Type>` blocks, `enum <Name>` variants, and `mod <name>` items so user-defined types (e.g. `MyService::start_service()`, `Status::Active`) provide instant scoped completion.
+- **Dot Operator (`.`) Method Completion**: Added `get_method_completions()` to provide contextual method completions for expressions like `s.` (string methods), `vec.` (vector/slice methods), `path.` (filesystem methods), `opt.` (option/result methods), `iter.` (iterator combinators), and user `impl` methods.
+- **Continuous Async LSP Completion Dispatch**: Ensured `lsp.request_completion()` is proactively dispatched for all scoped `::`, dot `.`, and identifier prefixes, asynchronously merging dynamic rust-analyzer completions with static and AST candidates.
 
 ---
 
@@ -279,7 +282,7 @@ hidden = false
 cargo test
 ```
 
-47 tests covering:
+48 tests covering:
 - CLI argument parsing and `-a` directory scanning
 - TOML configuration deserialization & Havax config path resolution
 - All command-mode commands (`:new`, `:w`, `:wa`, `:pwd`, `:cd`, `:set-language`, `:config-open`, `:config-reload`)
@@ -290,7 +293,9 @@ cargo test
 - Tree-sitter syntax highlighting accuracy (Rust and TOML)
 - LSP diagnostics and completion triggering (Rust and TOML)
 - Real-time background LSP diagnostic & completion reactivity
-- Scoped module completions filtering
+- Scoped module and type completions (`String::`, `std::fs::`, `std::io::`, `Vec::`)
+- Dot-operator method completions (`s.`, `path.`, `vec.`)
+- AST-derived `impl` associated functions and `enum` variant completions
 - Command-mode Tab/BackTab cycling and expanded write aliases
 - Theme inheritance and custom overrides
 - Rainbow bracket nesting colors
