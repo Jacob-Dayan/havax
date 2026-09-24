@@ -248,6 +248,12 @@ hidden = false
 - Curated TOML completions for schema keys, sections, themes, cursor shapes, and booleans (no Rust stdlib leakage)
 - Statusline dynamically reflects buffer language (`[rust]`, `[toml]`)
 
+### Phase 13 — Redo (`<Shift+u>`) & Word Skipping (`<Ctrl+Left/Right>`)
+- Fixed Shift-modified letter matching (`<Shift+u>`, `<Shift+p>`, `<Shift+i>`, `<Shift+a>`, `<Shift+o>`) across all terminal modifier combinations
+- Capital `U` / `<Shift+u>` / `<Ctrl+r>` reliably performs Redo (`self.buf_mut().redo()`)
+- `<Ctrl+Left>` / `<Alt+Left>` skips whole word backward in Normal, Insert, and Visual modes
+- `<Ctrl+Right>` / `<Alt+Right>` skips whole word forward in Normal, Insert, and Visual modes
+
 ---
 
 ## Testing
@@ -256,7 +262,7 @@ hidden = false
 cargo test
 ```
 
-40 tests covering:
+41 tests covering:
 - CLI argument parsing and `-a` directory scanning
 - TOML configuration deserialization & Havax config path resolution
 - All command-mode commands (`:new`, `:pwd`, `:cd`, `:set-language`, `:config-open`, `:config-reload`)
@@ -270,3 +276,4 @@ cargo test
 - Theme inheritance and custom overrides
 - Rainbow bracket nesting colors
 - Insert-mode completion keybindings (Tab/BackTab/Enter/Esc)
+- Redo (`<Shift+u>`) and `<Ctrl+Left/Right>` word navigation across modes

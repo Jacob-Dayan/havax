@@ -2,4 +2,4 @@
 sudo -v
 cargo build --release
 sudo mv target/release/havax /usr/local/bin/hv
-hv -V 
+hv -V

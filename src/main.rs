@@ -1656,4 +1656,100 @@ inherits = "catppuccin_mocha"
             path_str
         );
     }
+
+    #[test]
+    fn test_redo_with_shift_u_and_ctrl_arrow_word_navigation() {
+        let mut b = Buffer::new(PathBuf::from("test.rs")).unwrap();
+        b.lines = vec!["hello world test".to_string()];
+        let mut editor = Editor {
+            buffers: vec![b],
+            current_buffer: 0,
+            mode: types::Mode::Normal,
+            goto_return_mode: types::Mode::Normal,
+            match_return_mode: types::Mode::Normal,
+            match_state: types::MatchState::Menu,
+            clipboard: String::new(),
+            command_buffer: String::new(),
+            command_prefix: None,
+            command_completion_idx: 0,
+            status_message: None,
+            file_picker: None,
+            stdout: std::io::stdout(),
+            config: Config::default(),
+            config_path: None,
+            theme: Theme::default(),
+            lsp: None,
+            toml_lsp: None,
+            completion: crate::completion::CompletionMenu::new(),
+            lsp_doc_version: 1,
+            pending_c: false,
+        };
+
+        // 1. Test Ctrl+Right and Ctrl+Left word skipping in Normal Mode
+        editor.buf_mut().cursor = crate::types::Position { row: 0, col: 0 };
+        let _ = editor.handle_key(
+            crossterm::event::KeyCode::Right,
+            crossterm::event::KeyModifiers::CONTROL,
+        );
+        assert_eq!(editor.buf().cursor.col, 6); // start of "world"
+
+        let _ = editor.handle_key(
+            crossterm::event::KeyCode::Right,
+            crossterm::event::KeyModifiers::CONTROL,
+        );
+        assert_eq!(editor.buf().cursor.col, 12); // start of "test"
+
+        let _ = editor.handle_key(
+            crossterm::event::KeyCode::Left,
+            crossterm::event::KeyModifiers::CONTROL,
+        );
+        assert_eq!(editor.buf().cursor.col, 6); // back to "world"
+
+        // 2. Test Ctrl+Arrow in Insert Mode
+        editor.mode = types::Mode::Insert;
+        let _ = editor.handle_key(
+            crossterm::event::KeyCode::Left,
+            crossterm::event::KeyModifiers::CONTROL,
+        );
+        assert_eq!(editor.buf().cursor.col, 0); // back to "hello"
+
+        let _ = editor.handle_key(
+            crossterm::event::KeyCode::Right,
+            crossterm::event::KeyModifiers::CONTROL,
+        );
+        assert_eq!(editor.buf().cursor.col, 6); // forward to "world"
+
+        // 3. Test Undo and Redo with Shift+U in Normal Mode
+        editor.mode = types::Mode::Normal;
+        editor.buf_mut().push_history();
+        editor.buf_mut().lines[0] = "hello changed test".to_string();
+
+        // Undo (u)
+        let _ = editor.handle_key(
+            crossterm::event::KeyCode::Char('u'),
+            crossterm::event::KeyModifiers::NONE,
+        );
+        assert_eq!(editor.buf().lines[0], "hello world test");
+
+        // Redo with Shift+U (which crossterm can report as Char('U') with SHIFT modifier)
+        let _ = editor.handle_key(
+            crossterm::event::KeyCode::Char('U'),
+            crossterm::event::KeyModifiers::SHIFT,
+        );
+        assert_eq!(editor.buf().lines[0], "hello changed test");
+
+        // Undo again
+        let _ = editor.handle_key(
+            crossterm::event::KeyCode::Char('u'),
+            crossterm::event::KeyModifiers::NONE,
+        );
+        assert_eq!(editor.buf().lines[0], "hello world test");
+
+        // Redo with Char('u') + KeyModifiers::SHIFT
+        let _ = editor.handle_key(
+            crossterm::event::KeyCode::Char('u'),
+            crossterm::event::KeyModifiers::SHIFT,
+        );
+        assert_eq!(editor.buf().lines[0], "hello changed test");
+    }
 }

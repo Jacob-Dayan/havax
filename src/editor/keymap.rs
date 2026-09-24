@@ -243,7 +243,13 @@ impl Editor {
                     self.mode = Mode::Visual;
                 }
 
-                // Helix motions
+                // Helix motions & word skips
+                (KeyCode::Left, KeyModifiers::CONTROL) | (KeyCode::Left, KeyModifiers::ALT) => {
+                    self.buf_mut().move_prev_word_start()
+                }
+                (KeyCode::Right, KeyModifiers::CONTROL) | (KeyCode::Right, KeyModifiers::ALT) => {
+                    self.buf_mut().move_next_word_start()
+                }
                 (KeyCode::Char('h'), KeyModifiers::NONE) | (KeyCode::Left, _) => {
                     self.buf_mut().move_left()
                 }
@@ -308,7 +314,7 @@ impl Editor {
                     let clip = self.clipboard.clone();
                     self.buf_mut().paste_newline(&clip);
                 }
-                (KeyCode::Char('P'), KeyModifiers::NONE) => {
+                (KeyCode::Char('P'), _) | (KeyCode::Char('p'), KeyModifiers::SHIFT) => {
                     let clip = self.clipboard.clone();
                     self.buf_mut().paste_here(&clip);
                 }
@@ -327,7 +333,7 @@ impl Editor {
 
                 // Insert transitions
                 (KeyCode::Char('i'), KeyModifiers::NONE) => self.mode = Mode::Insert,
-                (KeyCode::Char('I'), KeyModifiers::NONE) => {
+                (KeyCode::Char('I'), _) | (KeyCode::Char('i'), KeyModifiers::SHIFT) => {
                     let buf = self.buf_mut();
                     let line = &buf.lines[buf.cursor.row];
                     let non_ws = line.chars().position(|c| !c.is_whitespace()).unwrap_or(0);
@@ -344,7 +350,7 @@ impl Editor {
                     buf.anchor = buf.cursor;
                     self.mode = Mode::Insert;
                 }
-                (KeyCode::Char('A'), KeyModifiers::NONE) => {
+                (KeyCode::Char('A'), _) | (KeyCode::Char('a'), KeyModifiers::SHIFT) => {
                     let buf = self.buf_mut();
                     buf.cursor.col = buf.lines[buf.cursor.row].chars().count();
                     buf.anchor = buf.cursor;
@@ -366,7 +372,7 @@ impl Editor {
                     buf.modified = true;
                     self.mode = Mode::Insert;
                 }
-                (KeyCode::Char('O'), KeyModifiers::NONE) => {
+                (KeyCode::Char('O'), _) | (KeyCode::Char('o'), KeyModifiers::SHIFT) => {
                     let buf = self.buf_mut();
                     buf.push_history();
                     let line = &buf.lines[buf.cursor.row];
@@ -387,7 +393,9 @@ impl Editor {
                         self.set_status("Already at oldest change", false);
                     }
                 }
-                (KeyCode::Char('U'), KeyModifiers::NONE) => {
+                (KeyCode::Char('U'), _)
+                | (KeyCode::Char('u'), KeyModifiers::SHIFT)
+                | (KeyCode::Char('r'), KeyModifiers::CONTROL) => {
                     if self.buf_mut().redo() {
                         self.set_status("Redo", false);
                     } else {
@@ -475,6 +483,12 @@ impl Editor {
                 }
 
                 // Motions extend selection
+                (KeyCode::Left, KeyModifiers::CONTROL) | (KeyCode::Left, KeyModifiers::ALT) => {
+                    self.buf_mut().move_prev_word_start_ext(true);
+                }
+                (KeyCode::Right, KeyModifiers::CONTROL) | (KeyCode::Right, KeyModifiers::ALT) => {
+                    self.buf_mut().move_next_word_start_ext(true);
+                }
                 (KeyCode::Char('h'), KeyModifiers::NONE) | (KeyCode::Left, _) => {
                     self.buf_mut().move_cursor_left(true);
                 }
@@ -567,7 +581,7 @@ impl Editor {
                     self.mode = Mode::Normal;
                 }
                 // Paste-here
-                (KeyCode::Char('P'), KeyModifiers::NONE) => {
+                (KeyCode::Char('P'), _) | (KeyCode::Char('p'), KeyModifiers::SHIFT) => {
                     let clip = self.clipboard.clone();
                     let buf = self.buf_mut();
                     let mut dummy = String::new();
@@ -829,7 +843,21 @@ impl Editor {
                                 buf.delete_selection(&mut clip);
                                 text_changed = true;
                             }
+                            KeyCode::Left
+                                if modifiers.contains(KeyModifiers::CONTROL)
+                                    || modifiers.contains(KeyModifiers::ALT) =>
+                            {
+                                buf.move_prev_word_start();
+                                buf.anchor = buf.cursor;
+                            }
                             KeyCode::Left => buf.move_left(),
+                            KeyCode::Right
+                                if modifiers.contains(KeyModifiers::CONTROL)
+                                    || modifiers.contains(KeyModifiers::ALT) =>
+                            {
+                                buf.move_next_word_start();
+                                buf.anchor = buf.cursor;
+                            }
                             KeyCode::Right => buf.move_right(),
                             KeyCode::Up => buf.move_up(),
                             KeyCode::Down => buf.move_down(),
