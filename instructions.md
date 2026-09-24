@@ -261,6 +261,11 @@ hidden = false
 - **Live Incremental Syntax Reparse**: Added `needs_reparse` tracking across all Buffer text modifications (insertion, deletion, backspace, undo, redo, paste, surround operations) so Tree-Sitter AST is immediately synchronized on every render, eliminating highlighting jumps and misalignment when deleting or editing lines.
 - **Live Tokenizer Fallback**: Blended AST highlighting with lexical tokenization for syntax fragments and `ERROR` nodes during typing so keywords (`let`, `fn`), numbers, strings, and operators are instantly colored in real-time.
 
+### Phase 15 — Bufferline Persistence & Write Command Polish
+- **Bufferline Persistence**: Fixed command execution (`:w`, `:w!`, `:wa`, `:wall`, `:write-all`, `:write!`) to ensure the editor keeps running and the top bufferline (row 0 tab bar) remains rendered seamlessly when `bufferline = "always"` or `bufferline = "multiple"` with >1 buffers.
+- **Write/Quit Aliases**: Added support for `:w!`, `:wa`, `:wall`, `:write-all`, `:write!`, `:wq!`, `:x!`, `:qa`, `:qa!`, `:qall`, `:qall!`, `:wqa`, `:wqall`, `:xa`.
+- **Interactive Tab Clicks**: Added mouse click support on row 0 tabs to switch directly to clicked buffer when `bufferline` is active.
+
 ---
 
 ## Testing
@@ -269,17 +274,17 @@ hidden = false
 cargo test
 ```
 
-44 tests covering:
+46 tests covering:
 - CLI argument parsing and `-a` directory scanning
 - TOML configuration deserialization & Havax config path resolution
-- All command-mode commands (`:new`, `:pwd`, `:cd`, `:set-language`, `:config-open`, `:config-reload`)
+- All command-mode commands (`:new`, `:w`, `:wa`, `:pwd`, `:cd`, `:set-language`, `:config-open`, `:config-reload`)
 - Visual mode motions (`vgl`)
 - Word/back-word motions with selection marking
 - Match mode (brackets, surround, select around/inside)
 - Tree-sitter syntax highlighting accuracy (Rust and TOML)
 - LSP diagnostics and completion triggering (Rust and TOML)
 - Scoped module completions filtering
-- Command-mode Tab/BackTab cycling
+- Command-mode Tab/BackTab cycling and expanded write aliases
 - Theme inheritance and custom overrides
 - Rainbow bracket nesting colors
 - Insert-mode completion keybindings (Tab/BackTab/Enter/Esc)
@@ -287,3 +292,4 @@ cargo test
 - Keyword completions (`let`, `fn`, `mut`, `match`) and multi-part fuzzy matching (`WriteBu` -> `BufWriter`)
 - Built-in auto-import insertion on completion acceptance
 - Live syntax highlighting reparse and deletion stability
+- Bufferline persistence during and after command execution

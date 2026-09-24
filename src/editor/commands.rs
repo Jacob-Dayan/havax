@@ -172,13 +172,29 @@ impl Editor {
 
         let parts: Vec<&str> = cmd.split_whitespace().collect();
         match parts[0] {
-            "w" | "write" => {
+            "w" | "write" | "w!" | "write!" => {
                 if parts.len() > 1 {
                     self.buf_mut().path = PathBuf::from(parts[1]);
                     self.buf_mut().reparse();
                     self.notify_lsp_open();
                 }
                 self.save_current()?;
+            }
+            "wa" | "wall" | "write-all" => {
+                let mut saved = 0;
+                for b in &mut self.buffers {
+                    if b.modified
+                        && !b.path.as_os_str().is_empty()
+                        && b.path.to_string_lossy() != "scratch"
+                    {
+                        let content = b.lines.join("\n");
+                        if std::fs::write(&b.path, content).is_ok() {
+                            b.modified = false;
+                            saved += 1;
+                        }
+                    }
+                }
+                self.set_status(&format!("{saved} buffers written"), false);
             }
             "q" | "quit" => {
                 if self.buf().modified {
@@ -188,7 +204,16 @@ impl Editor {
                 }
             }
             "q!" | "quit!" => return Ok(false),
-            "wq" | "write-quit" | "x" => {
+            "qa" | "qall" | "quitall" => {
+                let has_modified = self.buffers.iter().any(|b| b.modified);
+                if has_modified {
+                    self.set_status("Unsaved changes in buffers! Use :qa! or :wa to override.", true);
+                } else {
+                    return Ok(false);
+                }
+            }
+            "qa!" | "qall!" | "quitall!" => return Ok(false),
+            "wq" | "write-quit" | "x" | "wq!" | "write-quit!" | "x!" => {
                 if parts.len() > 1 {
                     self.buf_mut().path = PathBuf::from(parts[1]);
                     self.buf_mut().reparse();
@@ -201,6 +226,19 @@ impl Editor {
                     return Ok(true);
                 }
                 self.save_current()?;
+                return Ok(false);
+            }
+            "wqa" | "wqall" | "xa" => {
+                for b in &mut self.buffers {
+                    if b.modified
+                        && !b.path.as_os_str().is_empty()
+                        && b.path.to_string_lossy() != "scratch"
+                    {
+                        let content = b.lines.join("\n");
+                        let _ = std::fs::write(&b.path, content);
+                        b.modified = false;
+                    }
+                }
                 return Ok(false);
             }
             "new" => {
@@ -519,10 +557,14 @@ pub const ALL_COMMANDS: &[&str] = &[
     "o",
     "open",
     "pwd",
-    "q",
-    "q!",
+    "qa",
+    "qa!",
+    "qall",
+    "qall!",
     "quit",
     "quit!",
+    "quitall",
+    "quitall!",
     "r",
     "run",
     "set-language",
@@ -533,10 +575,21 @@ pub const ALL_COMMANDS: &[&str] = &[
     "tree-sitter-highlight-name",
     "tree-sitter-subtree",
     "w",
-    "write",
+    "w!",
+    "wa",
+    "wall",
     "wq",
+    "wq!",
+    "wqa",
+    "wqall",
+    "write",
+    "write!",
+    "write-all",
     "write-quit",
+    "write-quit!",
     "x",
+    "x!",
+    "xa",
 ];
 
 pub fn get_command_completions(input: &str) -> Vec<&'static str> {

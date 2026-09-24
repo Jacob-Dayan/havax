@@ -1916,5 +1916,77 @@ inherits = "catppuccin_mocha"
         assert_eq!(highlighted[0].1, theme.keyword);
         assert_eq!(highlighted[1].1, theme.keyword);
     }
+
+    #[test]
+    fn test_command_write_preserves_editor_running_and_bufferline() {
+        let temp_dir = std::env::temp_dir().join("havax_test_write_bufferline");
+        let _ = std::fs::create_dir_all(&temp_dir);
+        let test_file = temp_dir.join("test_write.rs");
+        let _ = std::fs::write(&test_file, "fn main() {}\n");
+
+        let mut cfg = Config::default();
+        cfg.editor.bufferline = config::Bufferline::Always;
+
+        let mut editor = Editor {
+            buffers: vec![Buffer::new(test_file.clone()).unwrap()],
+            current_buffer: 0,
+            mode: types::Mode::Command,
+            goto_return_mode: types::Mode::Normal,
+            match_return_mode: types::Mode::Normal,
+            match_state: types::MatchState::Menu,
+            clipboard: String::new(),
+            command_buffer: "w".to_string(),
+            command_prefix: None,
+            command_completion_idx: 0,
+            status_message: None,
+            file_picker: None,
+            stdout: std::io::stdout(),
+            config: cfg,
+            config_path: None,
+            theme: ui::theme::Theme::one_dark(),
+            lsp: None,
+            toml_lsp: None,
+            completion: lsp::completion::CompletionMenu::new(),
+            lsp_doc_version: 1,
+            pending_c: false,
+        };
+
+        // Mark buffer as modified
+        editor.buf_mut().lines[0] = "fn main() { println!(\"hello\"); }".to_string();
+        editor.buf_mut().modified = true;
+
+        // Execute :w
+        let should_continue = editor.execute_command().unwrap();
+
+        // Must return true (editor keeps running, doesn't exit/close)
+        assert!(should_continue);
+        assert_eq!(editor.mode, types::Mode::Normal);
+        assert!(!editor.buf().modified);
+        assert_eq!(editor.config.editor.bufferline, config::Bufferline::Always);
+        assert_eq!(editor.buffers.len(), 1);
+
+        // Verify status message
+        assert!(editor.status_message.is_some());
+        let (msg, is_err) = editor.status_message.as_ref().unwrap();
+        assert!(!is_err);
+        assert!(msg.contains("written"));
+
+        // Clean up
+        let _ = std::fs::remove_dir_all(&temp_dir);
+    }
+
+    #[test]
+    fn test_expanded_command_completions() {
+        let completions = editor::commands::get_command_completions("w");
+        assert!(completions.contains(&"w"));
+        assert!(completions.contains(&"w!"));
+        assert!(completions.contains(&"wa"));
+        assert!(completions.contains(&"wall"));
+        assert!(completions.contains(&"wq"));
+        assert!(completions.contains(&"wq!"));
+        assert!(completions.contains(&"write"));
+        assert!(completions.contains(&"write!"));
+        assert!(completions.contains(&"write-all"));
+    }
 }
 

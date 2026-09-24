@@ -694,15 +694,36 @@ impl Editor {
             }
             let show_tab_bar = match self.config.editor.bufferline {
                 Bufferline::Always => true,
-                Bufferline::Multiple => {
-                    self.buffers
-                        .iter()
-                        .filter(|b| !b.path.as_os_str().is_empty())
-                        .count()
-                        > 1
-                }
+                Bufferline::Multiple => self.buffers.len() > 1,
                 Bufferline::Never => false,
             };
+
+            if show_tab_bar && mouse.row == 0 {
+                let mut current_x = 0;
+                for (i, b) in self.buffers.iter().enumerate() {
+                    let fname = b
+                        .path
+                        .file_name()
+                        .unwrap_or(b.path.as_os_str())
+                        .to_string_lossy();
+                    let display_title = if fname.is_empty() || fname == "scratch" {
+                        "[scratch]"
+                    } else {
+                        &fname
+                    };
+                    let mod_flag = if b.modified { " [+]" } else { "" };
+                    let tab_len = format!(" {}: {display_title}{mod_flag} ", i + 1).len();
+                    if (mouse.column as usize) >= current_x
+                        && (mouse.column as usize) < current_x + tab_len
+                    {
+                        self.current_buffer = i;
+                        self.notify_lsp_open();
+                        break;
+                    }
+                    current_x += tab_len;
+                }
+                return Ok(());
+            }
             let content_start_y = if show_tab_bar { 1 } else { 0 };
             let (_, rows) = size()?;
             let content_rows = rows.saturating_sub(if show_tab_bar { 2 } else { 1 });
