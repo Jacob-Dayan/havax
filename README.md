@@ -350,3 +350,5 @@ All 37 unit tests verify:
 * Visual mode selection motions (`vgl`), word motions and backward deletion across platforms.
 
 
+> *Note*: I have no shit to make a full damm editor so I use antigravity to vibecode this app.
+
