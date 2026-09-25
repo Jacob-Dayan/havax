@@ -2860,3 +2860,81 @@ fn test_closure_parameter_and_body_completions() {
         "Must extract closure parameter custom_item as variable completion"
     );
 }
+
+#[test]
+fn test_clipboard_yank_command_and_aliases() {
+    let mut buf = Buffer::new(PathBuf::from("test.rs")).unwrap();
+    buf.lines = vec![
+        "let message = \"hello world\";".to_string(),
+        "println!(\"{message}\");".to_string(),
+    ];
+    let mut editor = Editor {
+        buffers: vec![buf],
+        current_buffer: 0,
+        mode: Mode::Normal,
+        goto_return_mode: Mode::Normal,
+        match_return_mode: Mode::Normal,
+        match_state: MatchState::Menu,
+        clipboard: String::new(),
+        command_buffer: String::new(),
+        command_prefix: None,
+        command_completion_idx: 0,
+        status_message: None,
+        file_picker: None,
+        stdout: std::io::stdout(),
+        config: Config {
+            theme: "one-half-dark".to_string(),
+            editor: EditorConfig::default(),
+        },
+        config_path: None,
+        theme: Theme::default(),
+        lsp: None,
+        toml_lsp: None,
+        completion: havax::completion::CompletionMenu::new(),
+        lsp_doc_version: 1,
+        prev_buffer_idx: 0,
+        active_completion_req: 0,
+        pending_c: false,
+    };
+
+    // 1. Test :clipboard-yank on visual selection
+    editor.buf_mut().anchor = types::Position { row: 0, col: 4 };
+    editor.buf_mut().cursor = types::Position { row: 0, col: 11 };
+    editor.command_buffer = "clipboard-yank".to_string();
+    let res = editor.execute_command();
+    assert!(res.is_ok());
+    assert_eq!(editor.clipboard, "message");
+
+    // 2. Test :cb alias
+    editor.buf_mut().anchor = types::Position { row: 0, col: 15 };
+    editor.buf_mut().cursor = types::Position { row: 0, col: 26 };
+    editor.command_buffer = "cb".to_string();
+    let _ = editor.execute_command();
+    assert_eq!(editor.clipboard, "hello world");
+
+    // 3. Test :cby alias
+    editor.buf_mut().anchor = types::Position { row: 1, col: 0 };
+    editor.buf_mut().cursor = types::Position { row: 1, col: 8 };
+    editor.command_buffer = "cby".to_string();
+    let _ = editor.execute_command();
+    assert_eq!(editor.clipboard, "println!");
+
+    // 4. Test :ycb alias
+    editor.buf_mut().anchor = types::Position { row: 1, col: 10 };
+    editor.buf_mut().cursor = types::Position { row: 1, col: 19 };
+    editor.command_buffer = "ycb".to_string();
+    let _ = editor.execute_command();
+    assert_eq!(editor.clipboard, "{message}");
+
+    // 5. Test command completion suggestions
+    let completions_cb = havax::editor::commands::get_command_completions("cb");
+    assert!(completions_cb.contains(&"cb"));
+    assert!(completions_cb.contains(&"cby"));
+
+    let completions_clip = havax::editor::commands::get_command_completions("clipboard");
+    assert!(completions_clip.contains(&"clipboard-yank"));
+
+    let completions_ycb = havax::editor::commands::get_command_completions("ycb");
+    assert!(completions_ycb.contains(&"ycb"));
+}
+

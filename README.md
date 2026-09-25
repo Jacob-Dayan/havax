@@ -286,6 +286,7 @@ Automatically catches `Ctrl+Backspace` on Windows and `Alt+Backspace` / `Ctrl+W`
 | `:bc!` / `:bclose!` | Force close current buffer discarding edits |
 | `:bco` / `:bcloseother` | Close all other buffers |
 | `:b <index\|name>` | Switch to buffer by 1-based number or name match |
+| `:clipboard-yank` / `:cb` / `:cby` / `:ycb` | Copy active selection / visualized words (or current line) to clipboard (OSC 52 synced) |
 | `:config-open` | Open configuration file (`config.toml`) in a new buffer |
 | `:config-reload` | Reload configuration file from disk immediately |
 | `:theme <name>` | Change active color theme dynamically |

@@ -291,6 +291,9 @@ impl Editor {
                     self.set_status("Usage: :b <number|name>", true);
                 }
             }
+            "clipboard-yank" | "cb" | "cby" | "ycb" => {
+                self.clipboard_yank();
+            }
             // Shell commands
             "sh" | "shell" => {
                 let rest = if cmd.len() > parts[0].len() {
@@ -542,8 +545,11 @@ pub const ALL_COMMANDS: &[&str] = &[
     "bp",
     "bprev",
     "buffer",
+    "cb",
+    "cby",
     "cd",
     "check",
+    "clipboard-yank",
     "config-open",
     "config-open-workspace",
     "config-reload",
@@ -594,6 +600,7 @@ pub const ALL_COMMANDS: &[&str] = &[
     "x",
     "x!",
     "xa",
+    "ycb",
 ];
 
 pub fn get_command_completions(input: &str) -> Vec<&'static str> {
