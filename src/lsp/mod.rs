@@ -246,7 +246,7 @@ impl LspClient {
         }
     }
 
-    pub fn notify_open(&self, path: &Path, content: &str) {
+    pub fn notify_open(&self, path: &Path, language_id: &str, content: &str) {
         let uri = path_to_uri(path);
         let msg = json!({
             "jsonrpc": "2.0",
@@ -254,7 +254,7 @@ impl LspClient {
             "params": {
                 "textDocument": {
                     "uri": uri,
-                    "languageId": "rust",
+                    "languageId": language_id,
                     "version": 1,
                     "text": content
                 }
@@ -694,6 +694,11 @@ fn handle_lsp_message(
                         let insert_text = it
                             .get("insertText")
                             .and_then(|i| i.as_str())
+                            .or_else(|| {
+                                it.get("textEdit")
+                                    .and_then(|te| te.get("newText"))
+                                    .and_then(|nt| nt.as_str())
+                            })
                             .map(String::from);
 
                         completions.push(CompletionItem {

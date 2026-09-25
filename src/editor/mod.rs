@@ -242,12 +242,12 @@ impl Editor {
         match b.language() {
             "rust" => {
                 if let Some(lsp) = &self.lsp {
-                    lsp.notify_open(&b.path, &b.lines.join("\n"));
+                    lsp.notify_open(&b.path, "rust", &b.lines.join("\n"));
                 }
             }
             "toml" => {
                 if let Some(lsp) = &self.toml_lsp {
-                    lsp.notify_open(&b.path, &b.lines.join("\n"));
+                    lsp.notify_open(&b.path, "toml", &b.lines.join("\n"));
                 }
             }
             _ => {}
