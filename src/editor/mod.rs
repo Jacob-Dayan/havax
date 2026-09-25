@@ -224,6 +224,12 @@ impl Editor {
         }
 
         let buf = self.buf_mut();
+        if let Some(parent) = buf.path.parent()
+            && !parent.as_os_str().is_empty()
+            && !parent.exists()
+        {
+            let _ = fs::create_dir_all(parent);
+        }
         let content = buf.lines.join("\n");
         fs::write(&buf.path, content)?;
         buf.modified = false;
@@ -531,6 +537,8 @@ impl Editor {
             self.completion.show(trigger_col, &filter_prefix, items);
         } else {
             self.completion.close();
+            self.completion.trigger_col = trigger_col;
+            self.completion.prefix = filter_prefix;
         }
     }
 
@@ -1094,7 +1102,7 @@ impl Editor {
     }
 
     pub fn update_lsp_completions(&mut self) {
-        if !self.completion.visible {
+        if self.mode != Mode::Insert {
             return;
         }
         let is_rust = self.buf().language() == "rust";
@@ -1109,21 +1117,50 @@ impl Editor {
         if let Some(lsp) = lsp_client
             && let Some(lsp_items) = lsp.get_completions_for(self.active_completion_req)
         {
-            let filter = self.completion.prefix.to_lowercase();
+            if lsp_items.is_empty() {
+                return;
+            }
+            let buf = self.buf();
+            let row = buf.cursor.row;
+            let cur_col = buf.cursor.col;
+            let line = buf.lines.get(row).map(|s| s.as_str()).unwrap_or("");
+            let chars: Vec<char> = line.chars().collect();
+            let safe_col = cur_col.min(chars.len());
+
+            let trigger_col = self.completion.trigger_col.min(safe_col);
+            let filter: String = chars[trigger_col..safe_col].iter().collect();
+            let f_lower = filter.to_lowercase();
+
+            let mut matched_items = Vec::new();
             for item in lsp_items {
                 let l_lower = item.label.to_lowercase();
-                let matches_filter = filter.is_empty()
-                    || l_lower.starts_with(&filter)
-                    || l_lower.contains(&filter)
-                    || crate::lsp::fuzzy_match_score(&filter, &item.label).is_some();
+                let matches_filter = f_lower.is_empty()
+                    || l_lower.starts_with(&f_lower)
+                    || l_lower.contains(&f_lower)
+                    || crate::lsp::fuzzy_match_score(&f_lower, &item.label).is_some();
                 if matches_filter
-                    && !self
-                        .completion
-                        .items
+                    && !matched_items
                         .iter()
-                        .any(|it| it.label == item.label)
+                        .any(|it: &crate::lsp::CompletionItem| it.label == item.label)
                 {
-                    self.completion.items.push(item);
+                    matched_items.push(item);
+                }
+            }
+
+            if !matched_items.is_empty() {
+                if self.completion.visible {
+                    for item in matched_items {
+                        if !self
+                            .completion
+                            .items
+                            .iter()
+                            .any(|it| it.label == item.label)
+                        {
+                            self.completion.items.push(item);
+                        }
+                    }
+                } else {
+                    self.completion.show(trigger_col, &filter, matched_items);
                 }
             }
         }
@@ -1160,10 +1197,8 @@ impl Editor {
                     .unwrap_or(0);
             if current_comp_ver != last_comp_ver {
                 last_comp_ver = current_comp_ver;
-                if self.completion.visible {
-                    self.update_lsp_completions();
-                    needs_redraw = true;
-                }
+                self.update_lsp_completions();
+                needs_redraw = true;
             }
 
             if needs_redraw {

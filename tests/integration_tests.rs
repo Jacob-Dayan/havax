@@ -2938,3 +2938,116 @@ fn test_clipboard_yank_command_and_aliases() {
     assert!(completions_ycb.contains(&"ycb"));
 }
 
+#[test]
+fn test_scoped_double_colon_dynamic_ast_and_lsp_autocompletion() {
+    let code = vec![
+        "pub mod network {".to_string(),
+        "    pub struct Socket {".to_string(),
+        "        pub port: u16,".to_string(),
+        "    }".to_string(),
+        "    impl Socket {".to_string(),
+        "        pub const DEFAULT_PORT: u16 = 8080;".to_string(),
+        "        pub fn bind(addr: &str) -> Self {".to_string(),
+        "            Self { port: 8080 }".to_string(),
+        "        }".to_string(),
+        "        pub fn connect(&self) {}".to_string(),
+        "    }".to_string(),
+        "    pub enum Protocol {".to_string(),
+        "        Tcp,".to_string(),
+        "        Udp,".to_string(),
+        "    }".to_string(),
+        "}".to_string(),
+        "fn main() {".to_string(),
+        "    let _ = network::Socket::".to_string(),
+        "}".to_string(),
+    ];
+
+    let mut buf = Buffer::new(PathBuf::from("src/main.rs")).unwrap();
+    buf.lines = code;
+    buf.cursor = types::Position { row: 17, col: 29 };
+    buf.reparse();
+
+    // 1. Dynamic Tree-Sitter scoped completion for Socket::
+    let socket_items = havax::lsp::extract_tree_sitter_scoped_symbols(
+        buf.tree.as_ref(),
+        &buf.lines,
+        "network::Socket",
+        "",
+    );
+    let socket_labels: Vec<&str> = socket_items.iter().map(|it| it.label.as_str()).collect();
+    assert!(
+        socket_labels.contains(&"bind"),
+        "Must autocomplete associated function Socket::bind"
+    );
+    assert!(
+        socket_labels.contains(&"connect"),
+        "Must autocomplete method Socket::connect"
+    );
+    assert!(
+        socket_labels.contains(&"DEFAULT_PORT"),
+        "Must autocomplete associated const Socket::DEFAULT_PORT"
+    );
+
+    // 2. Dynamic Tree-Sitter scoped completion for Protocol::
+    let enum_items = havax::lsp::extract_tree_sitter_scoped_symbols(
+        buf.tree.as_ref(),
+        &buf.lines,
+        "network::Protocol",
+        "",
+    );
+    let enum_labels: Vec<&str> = enum_items.iter().map(|it| it.label.as_str()).collect();
+    assert!(
+        enum_labels.contains(&"Tcp"),
+        "Must autocomplete enum variant Protocol::Tcp"
+    );
+    assert!(
+        enum_labels.contains(&"Udp"),
+        "Must autocomplete enum variant Protocol::Udp"
+    );
+
+    // 3. Editor trigger completion on line ending with ::
+    let mut editor = Editor {
+        buffers: vec![buf],
+        current_buffer: 0,
+        mode: Mode::Insert,
+        goto_return_mode: Mode::Normal,
+        match_return_mode: Mode::Normal,
+        match_state: MatchState::Menu,
+        clipboard: String::new(),
+        command_buffer: String::new(),
+        command_prefix: None,
+        command_completion_idx: 0,
+        status_message: None,
+        file_picker: None,
+        stdout: std::io::stdout(),
+        config: Config {
+            theme: "one-half-dark".to_string(),
+            editor: EditorConfig::default(),
+        },
+        config_path: None,
+        theme: Theme::default(),
+        lsp: None,
+        toml_lsp: None,
+        completion: havax::completion::CompletionMenu::new(),
+        lsp_doc_version: 1,
+        prev_buffer_idx: 0,
+        active_completion_req: 0,
+        pending_c: false,
+    };
+
+    editor.trigger_completion();
+    assert!(
+        editor.completion.visible,
+        "Completion popup must be visible immediately upon typing ::"
+    );
+    let labels: Vec<&str> = editor
+        .completion
+        .items
+        .iter()
+        .map(|it| it.label.as_str())
+        .collect();
+    assert!(labels.contains(&"bind"));
+    assert!(labels.contains(&"DEFAULT_PORT"));
+}
+
+
