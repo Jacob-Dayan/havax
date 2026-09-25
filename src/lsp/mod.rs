@@ -1780,56 +1780,13 @@ pub fn is_subsequence(sub: &str, target: &str) -> bool {
 
 pub fn get_buffer_diagnostics(
     path: &Path,
-    tree: Option<&tree_sitter::Tree>,
+    _tree: Option<&tree_sitter::Tree>,
     _lines: &[String],
     lsp: Option<&LspClient>,
     _lang: &str,
 ) -> Vec<Diagnostic> {
-    // 1. Language server diagnostics take highest precedence
     if let Some(lsp) = lsp {
-        let diags = lsp.get_diagnostics(path);
-        if !diags.is_empty() {
-            return diags;
-        }
+        return lsp.get_diagnostics(path);
     }
-
-    // 2. Tree-sitter syntax error AST traversal (only actual error/missing nodes)
-    let mut diags = Vec::new();
-    if let Some(t) = tree {
-        collect_tree_sitter_errors(t.root_node(), &mut diags);
-    }
-
-    diags
-}
-
-fn collect_tree_sitter_errors(
-    node: tree_sitter::Node,
-    diags: &mut Vec<Diagnostic>,
-) {
-    if node.is_error() || node.is_missing() {
-        let start = node.start_position();
-        let end = node.end_position();
-        let row = start.row;
-        let msg = if node.is_missing() {
-            format!("Syntax Error: expected {}", node.kind())
-        } else {
-            "Syntax Error: unexpected token".to_string()
-        };
-
-        if !diags.iter().any(|d| d.line == row) {
-            diags.push(Diagnostic {
-                line: row,
-                col_start: start.column,
-                col_end: end.column.max(start.column + 1),
-                severity: DiagnosticSeverity::Error,
-                message: msg,
-            });
-        }
-    } else {
-        for i in 0..node.child_count() {
-            if let Some(child) = node.child(i) {
-                collect_tree_sitter_errors(child, diags);
-            }
-        }
-    }
+    Vec::new()
 }

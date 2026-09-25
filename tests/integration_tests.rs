@@ -580,16 +580,12 @@ hidden = false
         buf.lines = lines.clone();
         buf.reparse();
 
+        // 1. Without LSP server publishing diagnostics, no fake syntax errors are created
         let diags =
             havax::lsp::get_buffer_diagnostics(&path, buf.tree.as_ref(), &lines, None, "rust");
-        assert!(!diags.is_empty());
-        let diag = diags.iter().find(|d| d.line == 1);
-        assert!(diag.is_some());
-        let err = diag.unwrap();
-        assert_eq!(err.severity, havax::lsp::DiagnosticSeverity::Error);
-        assert!(err.message.starts_with("Syntax Error:"));
+        assert!(diags.is_empty(), "Must not invent fake syntax errors without Language Server");
 
-        // Verify that multiline struct/closure opening lines do NOT get fake syntax errors
+        // 2. Multiline struct/closure declarations are completely clean
         let multiline = vec![
             "fn main() {".to_string(),
             "    let mut editor = Editor {".to_string(),
