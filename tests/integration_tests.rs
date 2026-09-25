@@ -1290,6 +1290,37 @@ inherits = "catppuccin_mocha"
         assert_eq!(editor.mode, types::Mode::Visual);
         assert_eq!(editor.buf().anchor, types::Position { row: 0, col: 11 });
         assert_eq!(editor.buf().cursor, types::Position { row: 0, col: 20 });
+
+        // 3. Multi-line function with empty lines: test `mi{`
+        let fn_lines = vec![
+            "fn main() {".to_string(),
+            "    let s = [\"two\"];".to_string(),
+            "".to_string(),
+            "    match s[0] {".to_string(),
+            "        \"two\" => 2,".to_string(),
+            "        _ => 1,".to_string(),
+            "    }".to_string(),
+            "}".to_string(),
+        ];
+        let mut fn_buf = Buffer::new(PathBuf::from("main.rs")).unwrap();
+        fn_buf.lines = fn_lines;
+        fn_buf.cursor = types::Position { row: 2, col: 0 }; // on empty line inside function
+        fn_buf.anchor = fn_buf.cursor;
+        editor.buffers = vec![fn_buf];
+        editor.mode = types::Mode::Normal;
+
+        // Press 'm', 'i', '{'
+        let _ = editor.handle_key(crossterm::event::KeyCode::Char('m'), crossterm::event::KeyModifiers::NONE);
+        let _ = editor.handle_key(crossterm::event::KeyCode::Char('i'), crossterm::event::KeyModifiers::NONE);
+        let _ = editor.handle_key(crossterm::event::KeyCode::Char('{'), crossterm::event::KeyModifiers::NONE);
+
+        assert_eq!(editor.mode, types::Mode::Visual);
+        assert_eq!(editor.buf().anchor, types::Position { row: 0, col: 11 });
+        assert_eq!(editor.buf().cursor, types::Position { row: 7, col: 0 });
+
+        // Delete selection 'd'
+        let _ = editor.handle_key(crossterm::event::KeyCode::Char('d'), crossterm::event::KeyModifiers::NONE);
+        assert_eq!(editor.buf().lines.join("\n"), "fn main() {}");
     }
 
     #[test]

@@ -943,6 +943,9 @@ impl Buffer {
         let mut depth = 0;
         for r in start_row..self.lines.len() {
             let chars: Vec<char> = self.lines[r].chars().collect();
+            if chars.is_empty() {
+                continue;
+            }
             let c_start = if r == start_row { start_col } else { 0 };
             for c in c_start..chars.len() {
                 if chars[c] == open {
@@ -969,10 +972,13 @@ impl Buffer {
         let mut depth = 0;
         for r in (0..=start_row).rev() {
             let chars: Vec<char> = self.lines[r].chars().collect();
+            if chars.is_empty() {
+                continue;
+            }
             let c_start = if r == start_row {
-                start_col.min(chars.len().saturating_sub(1))
+                start_col.min(chars.len() - 1)
             } else {
-                chars.len().saturating_sub(1)
+                chars.len() - 1
             };
             for c in (0..=c_start).rev() {
                 if chars[c] == close {
@@ -1021,10 +1027,13 @@ impl Buffer {
         let mut depth = 0;
         for r in (0..=pos.row).rev() {
             let chars: Vec<char> = self.lines[r].chars().collect();
+            if chars.is_empty() {
+                continue;
+            }
             let c_start = if r == pos.row {
-                pos.col.min(chars.len().saturating_sub(1))
+                pos.col.min(chars.len() - 1)
             } else {
-                chars.len().saturating_sub(1)
+                chars.len() - 1
             };
             for c in (0..=c_start).rev() {
                 if chars[c] == close_char {
