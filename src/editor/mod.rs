@@ -1,7 +1,7 @@
 use std::{
     error::Error,
     fs,
-    io::{Stdout, stdout, Write},
+    io::{Stdout, Write, stdout},
     path::PathBuf,
 };
 
@@ -77,7 +77,7 @@ impl Editor {
         let file_picker =
             open_dir.map(|dir| FilePicker::with_hidden(dir, config.editor.file_picker.hidden));
 
-        let root_dir = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+        let root_dir = crate::lsp::find_workspace_root(buffers.first().map(|b| b.path.as_path()));
         let lsp = LspClient::new_rust(root_dir.clone());
         let toml_lsp = LspClient::new_toml(root_dir);
         let completion = CompletionMenu::new();
@@ -300,7 +300,19 @@ impl Editor {
         if self.buf().needs_reparse || self.buf().tree.is_none() {
             self.buf_mut().reparse();
         }
-        let (path, row, _col, is_rust, is_toml, lines, cur_col, filter_start, filter_prefix, scope_path, dot_call) = {
+        let (
+            path,
+            row,
+            _col,
+            is_rust,
+            is_toml,
+            lines,
+            cur_col,
+            filter_start,
+            filter_prefix,
+            scope_path,
+            dot_call,
+        ) = {
             let buf = self.buf();
             let row = buf.cursor.row;
             let col = buf.cursor.col;
@@ -354,7 +366,10 @@ impl Editor {
                     receiver_end -= 1;
                 }
                 let mut receiver_start = receiver_end;
-                while receiver_start > 0 && (chars[receiver_start - 1].is_alphanumeric() || chars[receiver_start - 1] == '_') {
+                while receiver_start > 0
+                    && (chars[receiver_start - 1].is_alphanumeric()
+                        || chars[receiver_start - 1] == '_')
+                {
                     receiver_start -= 1;
                 }
                 let receiver: String = chars[receiver_start..receiver_end].iter().collect();
@@ -410,7 +425,10 @@ impl Editor {
             self.active_completion_req = req_id;
             if let Some(lsp_items) = lsp.get_completions_for(req_id) {
                 for item in lsp_items {
-                    if !items.iter().any(|it: &crate::lsp::CompletionItem| it.label == item.label) {
+                    if !items
+                        .iter()
+                        .any(|it: &crate::lsp::CompletionItem| it.label == item.label)
+                    {
                         items.push(item);
                     }
                 }
@@ -432,23 +450,16 @@ impl Editor {
                 }
             }
         } else if let Some(receiver) = &dot_call {
-            let ast_methods = crate::lsp::extract_tree_sitter_methods(
-                tree_ref,
-                &lines,
-                receiver,
-                &filter_prefix,
-            );
+            let ast_methods =
+                crate::lsp::extract_tree_sitter_methods(tree_ref, &lines, receiver, &filter_prefix);
             for item in ast_methods {
                 if !items.iter().any(|it| it.label == item.label) {
                     items.push(item);
                 }
             }
         } else if !filter_prefix.is_empty() {
-            let ast_symbols = crate::lsp::extract_tree_sitter_symbols(
-                tree_ref,
-                &lines,
-                &filter_prefix,
-            );
+            let ast_symbols =
+                crate::lsp::extract_tree_sitter_symbols(tree_ref, &lines, &filter_prefix);
             for sym in ast_symbols {
                 if !items.iter().any(|it| it.label == sym.label) {
                     items.push(sym);
@@ -713,11 +724,20 @@ impl Editor {
         if self.buffers.is_empty() {
             return;
         }
-        if self.prev_buffer_idx < self.buffers.len() && self.prev_buffer_idx != self.current_buffer {
+        if self.prev_buffer_idx < self.buffers.len() && self.prev_buffer_idx != self.current_buffer
+        {
             std::mem::swap(&mut self.prev_buffer_idx, &mut self.current_buffer);
             self.notify_lsp_open();
             let path = self.buf().path.display().to_string();
-            self.set_status(&format!("Buffer [{}/{}] {}", self.current_buffer + 1, self.buffers.len(), path), false);
+            self.set_status(
+                &format!(
+                    "Buffer [{}/{}] {}",
+                    self.current_buffer + 1,
+                    self.buffers.len(),
+                    path
+                ),
+                false,
+            );
         }
     }
 
@@ -730,7 +750,15 @@ impl Editor {
             self.current_buffer = idx;
             self.notify_lsp_open();
             let path = self.buf().path.display().to_string();
-            self.set_status(&format!("Buffer [{}/{}] {}", self.current_buffer + 1, self.buffers.len(), path), false);
+            self.set_status(
+                &format!(
+                    "Buffer [{}/{}] {}",
+                    self.current_buffer + 1,
+                    self.buffers.len(),
+                    path
+                ),
+                false,
+            );
         }
     }
 
@@ -756,7 +784,10 @@ impl Editor {
             while start.elapsed() < std::time::Duration::from_millis(150) {
                 if let Some(loc) = lsp.get_definition_for(req_id) {
                     self.jump_to_location(&loc)?;
-                    self.set_status(&format!("Jumped to {}:{}", loc.path.display(), loc.line + 1), false);
+                    self.set_status(
+                        &format!("Jumped to {}:{}", loc.path.display(), loc.line + 1),
+                        false,
+                    );
                     return Ok(());
                 }
                 std::thread::sleep(std::time::Duration::from_millis(10));
@@ -789,7 +820,10 @@ impl Editor {
                 let buf = self.buf_mut();
                 buf.cursor = target_pos;
                 buf.anchor = target_pos;
-                self.set_status(&format!("Jumped to definition on line {}", target_row + 1), false);
+                self.set_status(
+                    &format!("Jumped to definition on line {}", target_row + 1),
+                    false,
+                );
                 return Ok(());
             }
         }
@@ -808,7 +842,10 @@ impl Editor {
             while start.elapsed() < std::time::Duration::from_millis(150) {
                 if let Some(loc) = lsp.get_definition_for(req_id) {
                     self.jump_to_location(&loc)?;
-                    self.set_status(&format!("Jumped to type {}:{}", loc.path.display(), loc.line + 1), false);
+                    self.set_status(
+                        &format!("Jumped to type {}:{}", loc.path.display(), loc.line + 1),
+                        false,
+                    );
                     return Ok(());
                 }
                 std::thread::sleep(std::time::Duration::from_millis(10));
@@ -829,7 +866,10 @@ impl Editor {
             while start.elapsed() < std::time::Duration::from_millis(150) {
                 if let Some(loc) = lsp.get_definition_for(req_id) {
                     self.jump_to_location(&loc)?;
-                    self.set_status(&format!("Jumped to impl {}:{}", loc.path.display(), loc.line + 1), false);
+                    self.set_status(
+                        &format!("Jumped to impl {}:{}", loc.path.display(), loc.line + 1),
+                        false,
+                    );
                     return Ok(());
                 }
                 std::thread::sleep(std::time::Duration::from_millis(10));
@@ -850,7 +890,10 @@ impl Editor {
             while start.elapsed() < std::time::Duration::from_millis(150) {
                 if let Some(loc) = lsp.get_definition_for(req_id) {
                     self.jump_to_location(&loc)?;
-                    self.set_status(&format!("Jumped to ref {}:{}", loc.path.display(), loc.line + 1), false);
+                    self.set_status(
+                        &format!("Jumped to ref {}:{}", loc.path.display(), loc.line + 1),
+                        false,
+                    );
                     return Ok(());
                 }
                 std::thread::sleep(std::time::Duration::from_millis(10));
@@ -862,15 +905,21 @@ impl Editor {
 
     pub fn goto_file(&mut self) -> Result<(), Box<dyn Error>> {
         let word = self.buf().get_word_at_cursor();
-        let line = self.buf().lines.get(self.buf().cursor.row).cloned().unwrap_or_default();
+        let line = self
+            .buf()
+            .lines
+            .get(self.buf().cursor.row)
+            .cloned()
+            .unwrap_or_default();
         let mut candidate_path = None;
         if let Some(start) = line.find('"')
-            && let Some(end) = line[start + 1..].find('"') {
-                let p = PathBuf::from(&line[start + 1..start + 1 + end]);
-                if p.exists() {
-                    candidate_path = Some(p);
-                }
+            && let Some(end) = line[start + 1..].find('"')
+        {
+            let p = PathBuf::from(&line[start + 1..start + 1 + end]);
+            if p.exists() {
+                candidate_path = Some(p);
             }
+        }
         if candidate_path.is_none() && !word.is_empty() {
             let p = PathBuf::from(&word);
             if p.exists() {
@@ -903,7 +952,11 @@ impl Editor {
         }
         let buf = self.buf_mut();
         buf.cursor.row = loc.line.min(buf.lines.len().saturating_sub(1));
-        let line_len = buf.lines.get(buf.cursor.row).map(|l| l.chars().count()).unwrap_or(0);
+        let line_len = buf
+            .lines
+            .get(buf.cursor.row)
+            .map(|l| l.chars().count())
+            .unwrap_or(0);
         buf.cursor.col = loc.col.min(line_len);
         buf.anchor = buf.cursor;
         buf.scroll_row = buf.cursor.row.saturating_sub(10);
@@ -1015,7 +1068,13 @@ impl Editor {
                     || l_lower.starts_with(&filter)
                     || l_lower.contains(&filter)
                     || crate::lsp::fuzzy_match_score(&filter, &item.label).is_some();
-                if matches_filter && !self.completion.items.iter().any(|it| it.label == item.label) {
+                if matches_filter
+                    && !self
+                        .completion
+                        .items
+                        .iter()
+                        .any(|it| it.label == item.label)
+                {
                     self.completion.items.push(item);
                 }
             }
@@ -1030,15 +1089,27 @@ impl Editor {
         loop {
             // Check if any LSP background diagnostics arrived
             let current_diag_ver = self.lsp.as_ref().map(|l| l.diag_version()).unwrap_or(0)
-                + self.toml_lsp.as_ref().map(|l| l.diag_version()).unwrap_or(0);
+                + self
+                    .toml_lsp
+                    .as_ref()
+                    .map(|l| l.diag_version())
+                    .unwrap_or(0);
             if current_diag_ver != last_diag_ver {
                 last_diag_ver = current_diag_ver;
                 needs_redraw = true;
             }
 
             // Check if any LSP background completions arrived
-            let current_comp_ver = self.lsp.as_ref().map(|l| l.completion_version()).unwrap_or(0)
-                + self.toml_lsp.as_ref().map(|l| l.completion_version()).unwrap_or(0);
+            let current_comp_ver = self
+                .lsp
+                .as_ref()
+                .map(|l| l.completion_version())
+                .unwrap_or(0)
+                + self
+                    .toml_lsp
+                    .as_ref()
+                    .map(|l| l.completion_version())
+                    .unwrap_or(0);
             if current_comp_ver != last_comp_ver {
                 last_comp_ver = current_comp_ver;
                 if self.completion.visible {
@@ -1141,7 +1212,8 @@ impl Editor {
 }
 
 pub fn base64_encode(data: &[u8]) -> String {
-    const B64_CHARS: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    const B64_CHARS: &[u8; 64] =
+        b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
     let mut result = String::with_capacity(data.len().div_ceil(3) * 4);
     for chunk in data.chunks(3) {
         let b0 = chunk[0];

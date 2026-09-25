@@ -81,7 +81,6 @@ pub enum LineNumber {
     Relative,
 }
 
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 #[derive(Default)]
@@ -91,7 +90,6 @@ pub enum Bufferline {
     Multiple,
     Never,
 }
-
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CursorShapeConfig {
@@ -171,17 +169,20 @@ impl Default for Config {
 impl Config {
     pub fn config_dir() -> PathBuf {
         if let Ok(dir) = std::env::var("XDG_CONFIG_HOME")
-            && !dir.is_empty() {
-                return PathBuf::from(dir).join("havax");
-            }
+            && !dir.is_empty()
+        {
+            return PathBuf::from(dir).join("havax");
+        }
         if let Ok(home) = std::env::var("HOME")
-            && !home.is_empty() {
-                return PathBuf::from(home).join(".config").join("havax");
-            }
+            && !home.is_empty()
+        {
+            return PathBuf::from(home).join(".config").join("havax");
+        }
         if let Ok(appdata) = std::env::var("APPDATA")
-            && !appdata.is_empty() {
-                return PathBuf::from(appdata).join("havax");
-            }
+            && !appdata.is_empty()
+        {
+            return PathBuf::from(appdata).join("havax");
+        }
         PathBuf::from(".havax")
     }
 

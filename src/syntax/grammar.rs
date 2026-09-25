@@ -161,12 +161,12 @@ pub fn load_language(name: &str) -> tree_sitter::Language {
             if let Ok(lib) = libloading::Library::new(&lib_path)
                 && let Ok(func) =
                     lib.get::<unsafe extern "C" fn() -> *const ()>(symbol_name.as_bytes())
-                {
-                    let ptr = func();
-                    // Leak library handle so loaded code remains mapped
-                    std::mem::forget(lib);
-                    return tree_sitter::Language::from_raw(ptr as *const _);
-                }
+            {
+                let ptr = func();
+                // Leak library handle so loaded code remains mapped
+                std::mem::forget(lib);
+                return tree_sitter::Language::from_raw(ptr as *const _);
+            }
         }
     }
 

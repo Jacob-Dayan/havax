@@ -219,46 +219,47 @@ impl Editor {
 
                 // 4. Inline diagnostic error message (rendered right after code)
                 if let Some(diag) = diag_opt
-                    && col < end_col {
-                        let gap = 2.min(end_col - col);
-                        if gap > 0 {
-                            execute!(
-                                self.stdout,
-                                SetBackgroundColor(self.theme.bg),
-                                SetForegroundColor(self.theme.fg)
-                            )?;
-                            write!(self.stdout, "{:<gap$}", "")?;
-                            col += gap;
-                        }
-
-                        let diag_fg = match diag.severity {
-                            crate::lsp::DiagnosticSeverity::Error => Color::Rgb {
-                                r: 247,
-                                g: 118,
-                                b: 142,
-                            },
-                            crate::lsp::DiagnosticSeverity::Warning => Color::Rgb {
-                                r: 224,
-                                g: 175,
-                                b: 104,
-                            },
-                            _ => Color::Rgb {
-                                r: 122,
-                                g: 162,
-                                b: 247,
-                            },
-                        };
+                    && col < end_col
+                {
+                    let gap = 2.min(end_col - col);
+                    if gap > 0 {
                         execute!(
                             self.stdout,
                             SetBackgroundColor(self.theme.bg),
-                            SetForegroundColor(diag_fg)
+                            SetForegroundColor(self.theme.fg)
                         )?;
-
-                        for ch in diag.message.chars().take(end_col.saturating_sub(col)) {
-                            write!(self.stdout, "{ch}")?;
-                            col += 1;
-                        }
+                        write!(self.stdout, "{:<gap$}", "")?;
+                        col += gap;
                     }
+
+                    let diag_fg = match diag.severity {
+                        crate::lsp::DiagnosticSeverity::Error => Color::Rgb {
+                            r: 247,
+                            g: 118,
+                            b: 142,
+                        },
+                        crate::lsp::DiagnosticSeverity::Warning => Color::Rgb {
+                            r: 224,
+                            g: 175,
+                            b: 104,
+                        },
+                        _ => Color::Rgb {
+                            r: 122,
+                            g: 162,
+                            b: 247,
+                        },
+                    };
+                    execute!(
+                        self.stdout,
+                        SetBackgroundColor(self.theme.bg),
+                        SetForegroundColor(diag_fg)
+                    )?;
+
+                    for ch in diag.message.chars().take(end_col.saturating_sub(col)) {
+                        write!(self.stdout, "{ch}")?;
+                        col += 1;
+                    }
+                }
 
                 // 5. Fill remaining space on this line
                 if col < end_col {
@@ -305,7 +306,10 @@ impl Editor {
 
             execute!(
                 self.stdout,
-                cursor::MoveTo((badge_width + 2 + self.command_buffer.len()) as u16, status_row),
+                cursor::MoveTo(
+                    (badge_width + 2 + self.command_buffer.len()) as u16,
+                    status_row
+                ),
                 cursor::Show
             )?;
         } else {
@@ -420,7 +424,14 @@ impl Editor {
             let cur_screen_x = gutter_width + cur_buf.cursor.col.saturating_sub(cur_buf.scroll_col);
             let cur_screen_y =
                 content_start_y as usize + cur_buf.cursor.row.saturating_sub(cur_buf.scroll_row);
-            Self::render_match_menu(&mut self.stdout, &self.theme, cur_screen_x, cur_screen_y, cols, rows)?;
+            Self::render_match_menu(
+                &mut self.stdout,
+                &self.theme,
+                cur_screen_x,
+                cur_screen_y,
+                cols,
+                rows,
+            )?;
         }
 
         // --- Render Helix Goto Menu Overlay if active ---
@@ -429,7 +440,14 @@ impl Editor {
             let cur_screen_x = gutter_width + cur_buf.cursor.col.saturating_sub(cur_buf.scroll_col);
             let cur_screen_y =
                 content_start_y as usize + cur_buf.cursor.row.saturating_sub(cur_buf.scroll_row);
-            Self::render_goto_menu(&mut self.stdout, &self.theme, cur_screen_x, cur_screen_y, cols, rows)?;
+            Self::render_goto_menu(
+                &mut self.stdout,
+                &self.theme,
+                cur_screen_x,
+                cur_screen_y,
+                cols,
+                rows,
+            )?;
         }
 
         // --- Render Helix Directory / File Picker Overlay if active ---
@@ -440,14 +458,24 @@ impl Editor {
         // --- Render Command Completion Overlay in Command Mode ---
         if self.mode == Mode::Command {
             // Use the original prefix when cycling, otherwise the current buffer
-            let query = self.command_prefix.as_deref().unwrap_or(&self.command_buffer);
+            let query = self
+                .command_prefix
+                .as_deref()
+                .unwrap_or(&self.command_buffer);
             if !query.contains(' ') {
                 let selected = if self.command_prefix.is_some() {
                     Some(self.command_buffer.as_str())
                 } else {
                     None
                 };
-                Self::render_command_completions(&mut self.stdout, &self.theme, query, selected, cols, rows)?;
+                Self::render_command_completions(
+                    &mut self.stdout,
+                    &self.theme,
+                    query,
+                    selected,
+                    cols,
+                    rows,
+                )?;
             }
         }
 
@@ -466,7 +494,10 @@ impl Editor {
             let badge_width = 5; // " CMD "
             execute!(
                 self.stdout,
-                cursor::MoveTo((badge_width + 2 + self.command_buffer.len()) as u16, rows.saturating_sub(1)),
+                cursor::MoveTo(
+                    (badge_width + 2 + self.command_buffer.len()) as u16,
+                    rows.saturating_sub(1)
+                ),
                 cursor::Show
             )?;
         }
@@ -485,7 +516,9 @@ impl Editor {
     ) -> Result<(), Box<dyn Error>> {
         let menu_width = 36;
         let menu_height = 8;
-        let x = cursor_x.min((cols as usize).saturating_sub(menu_width + 2)).max(2);
+        let x = cursor_x
+            .min((cols as usize).saturating_sub(menu_width + 2))
+            .max(2);
         let y = if cursor_y + menu_height + 2 < rows as usize {
             cursor_y + 1
         } else {
@@ -505,12 +538,32 @@ impl Editor {
 
         // Top Border with Title ┌Match───...─┐
         execute!(stdout, cursor::MoveTo(x as u16, y as u16))?;
-        let bg = Color::Rgb { r: 38, g: 42, b: 58 };
-        let border_fg = Color::Rgb { r: 160, g: 170, b: 200 };
-        let key_fg = Color::Rgb { r: 240, g: 242, b: 250 };
-        let desc_fg = Color::Rgb { r: 180, g: 190, b: 215 };
+        let bg = Color::Rgb {
+            r: 38,
+            g: 42,
+            b: 58,
+        };
+        let border_fg = Color::Rgb {
+            r: 160,
+            g: 170,
+            b: 200,
+        };
+        let key_fg = Color::Rgb {
+            r: 240,
+            g: 242,
+            b: 250,
+        };
+        let desc_fg = Color::Rgb {
+            r: 180,
+            g: 190,
+            b: 215,
+        };
 
-        execute!(stdout, SetBackgroundColor(bg), SetForegroundColor(border_fg))?;
+        execute!(
+            stdout,
+            SetBackgroundColor(bg),
+            SetForegroundColor(border_fg)
+        )?;
         let title = "Match";
         let dashes = inner_w.saturating_sub(title.len());
         write!(stdout, "┌{title}{}┐", "─".repeat(dashes))?;
@@ -518,7 +571,11 @@ impl Editor {
         // Rows
         for (i, (key, desc)) in items.iter().enumerate() {
             execute!(stdout, cursor::MoveTo(x as u16, (y + 1 + i) as u16))?;
-            execute!(stdout, SetBackgroundColor(bg), SetForegroundColor(border_fg))?;
+            execute!(
+                stdout,
+                SetBackgroundColor(bg),
+                SetForegroundColor(border_fg)
+            )?;
             write!(stdout, "│")?;
 
             execute!(stdout, SetForegroundColor(key_fg))?;
@@ -535,7 +592,11 @@ impl Editor {
 
         // Bottom Border
         execute!(stdout, cursor::MoveTo(x as u16, (y + 7) as u16))?;
-        execute!(stdout, SetBackgroundColor(bg), SetForegroundColor(border_fg))?;
+        execute!(
+            stdout,
+            SetBackgroundColor(bg),
+            SetForegroundColor(border_fg)
+        )?;
         write!(stdout, "└{}┘", "─".repeat(inner_w))?;
 
         Ok(())
@@ -572,7 +633,9 @@ impl Editor {
 
         let menu_width = 36;
         let menu_height = items.len() + 2;
-        let x = cursor_x.min((cols as usize).saturating_sub(menu_width + 2)).max(2);
+        let x = cursor_x
+            .min((cols as usize).saturating_sub(menu_width + 2))
+            .max(2);
         let y = if cursor_y + menu_height + 2 < rows as usize {
             cursor_y + 1
         } else if cursor_y > menu_height {
@@ -585,12 +648,32 @@ impl Editor {
 
         // Top Border with Title ┌Goto───...─┐
         execute!(stdout, cursor::MoveTo(x as u16, y as u16))?;
-        let bg = Color::Rgb { r: 38, g: 42, b: 58 };
-        let border_fg = Color::Rgb { r: 160, g: 170, b: 200 };
-        let key_fg = Color::Rgb { r: 240, g: 242, b: 250 };
-        let desc_fg = Color::Rgb { r: 180, g: 190, b: 215 };
+        let bg = Color::Rgb {
+            r: 38,
+            g: 42,
+            b: 58,
+        };
+        let border_fg = Color::Rgb {
+            r: 160,
+            g: 170,
+            b: 200,
+        };
+        let key_fg = Color::Rgb {
+            r: 240,
+            g: 242,
+            b: 250,
+        };
+        let desc_fg = Color::Rgb {
+            r: 180,
+            g: 190,
+            b: 215,
+        };
 
-        execute!(stdout, SetBackgroundColor(bg), SetForegroundColor(border_fg))?;
+        execute!(
+            stdout,
+            SetBackgroundColor(bg),
+            SetForegroundColor(border_fg)
+        )?;
         let title = "Goto";
         let dashes = inner_w.saturating_sub(title.len());
         write!(stdout, "┌{title}{}┐", "─".repeat(dashes))?;
@@ -602,7 +685,11 @@ impl Editor {
                 break;
             }
             execute!(stdout, cursor::MoveTo(x as u16, row_y as u16))?;
-            execute!(stdout, SetBackgroundColor(bg), SetForegroundColor(border_fg))?;
+            execute!(
+                stdout,
+                SetBackgroundColor(bg),
+                SetForegroundColor(border_fg)
+            )?;
             write!(stdout, "│")?;
 
             execute!(stdout, SetForegroundColor(key_fg))?;
@@ -620,7 +707,11 @@ impl Editor {
         // Bottom Border
         let bottom_y = (y + items.len() + 1).min((rows as usize).saturating_sub(1));
         execute!(stdout, cursor::MoveTo(x as u16, bottom_y as u16))?;
-        execute!(stdout, SetBackgroundColor(bg), SetForegroundColor(border_fg))?;
+        execute!(
+            stdout,
+            SetBackgroundColor(bg),
+            SetForegroundColor(border_fg)
+        )?;
         write!(stdout, "└{}┘", "─".repeat(inner_w))?;
 
         Ok(())
@@ -1000,13 +1091,29 @@ impl Editor {
             0
         };
 
-        let bg = Color::Rgb { r: 32, g: 35, b: 46 };
-        let border_fg = Color::Rgb { r: 130, g: 140, b: 175 };
-        let text_fg = Color::Rgb { r: 215, g: 220, b: 235 };
+        let bg = Color::Rgb {
+            r: 32,
+            g: 35,
+            b: 46,
+        };
+        let border_fg = Color::Rgb {
+            r: 130,
+            g: 140,
+            b: 175,
+        };
+        let text_fg = Color::Rgb {
+            r: 215,
+            g: 220,
+            b: 235,
+        };
 
         // Top Border with Title ┌Commands─...─┐
         execute!(stdout, cursor::MoveTo(menu_x as u16, menu_y as u16))?;
-        execute!(stdout, SetBackgroundColor(bg), SetForegroundColor(border_fg))?;
+        execute!(
+            stdout,
+            SetBackgroundColor(bg),
+            SetForegroundColor(border_fg)
+        )?;
         let title = "Commands";
         let dashes = inner_w.saturating_sub(title.len());
         write!(stdout, "┌{title}{}┐", "─".repeat(dashes))?;
@@ -1023,19 +1130,30 @@ impl Editor {
             let is_sel = idx == selected_pos;
             let row_bg = if is_sel { theme.selection_bg } else { bg };
 
-            execute!(stdout, SetBackgroundColor(bg), SetForegroundColor(border_fg))?;
+            execute!(
+                stdout,
+                SetBackgroundColor(bg),
+                SetForegroundColor(border_fg)
+            )?;
             write!(stdout, "│")?;
 
             execute!(stdout, SetBackgroundColor(row_bg))?;
             let prefix = if is_sel { "> :" } else { "  :" };
-            execute!(stdout, SetForegroundColor(if is_sel { theme.keyword } else { text_fg }))?;
+            execute!(
+                stdout,
+                SetForegroundColor(if is_sel { theme.keyword } else { text_fg })
+            )?;
             write!(stdout, "{prefix}{cmd_name}")?;
 
             let written = prefix.len() + cmd_name.len();
             let pad = inner_w.saturating_sub(written);
             write!(stdout, "{:<pad$}", "")?;
 
-            execute!(stdout, SetBackgroundColor(bg), SetForegroundColor(border_fg))?;
+            execute!(
+                stdout,
+                SetBackgroundColor(bg),
+                SetForegroundColor(border_fg)
+            )?;
             write!(stdout, "│")?;
         }
 
@@ -1044,10 +1162,13 @@ impl Editor {
             stdout,
             cursor::MoveTo(menu_x as u16, (menu_y + 1 + visible_count) as u16)
         )?;
-        execute!(stdout, SetBackgroundColor(bg), SetForegroundColor(border_fg))?;
+        execute!(
+            stdout,
+            SetBackgroundColor(bg),
+            SetForegroundColor(border_fg)
+        )?;
         write!(stdout, "└{}┘", "─".repeat(inner_w))?;
 
         Ok(())
     }
 }
-

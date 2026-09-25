@@ -541,90 +541,378 @@ impl Theme {
     /// Atom One Dark — distinct from One Half Dark with warmer tones
     pub fn one_dark() -> Self {
         Self {
-            bg: Color::Rgb { r: 33, g: 37, b: 43 },       // #21252b
-            fg: Color::Rgb { r: 171, g: 178, b: 191 },    // #abb2bf
-            selection_bg: Color::Rgb { r: 55, g: 60, b: 72 }, // #373c48
-            status_bg: Color::Rgb { r: 24, g: 27, b: 33 },    // #181b21
-            status_fg: Color::Rgb { r: 150, g: 157, b: 170 }, // #969daa
-            gutter_fg: Color::Rgb { r: 76, g: 82, b: 99 },    // #4c5263
-            current_line_gutter: Color::Rgb { r: 200, g: 204, b: 212 },
-            keyword: Color::Rgb { r: 198, g: 120, b: 221 },   // #c678dd
-            r#type: Color::Rgb { r: 229, g: 192, b: 123 },    // #e5c07b
-            string: Color::Rgb { r: 152, g: 195, b: 121 },    // #98c379
-            number: Color::Rgb { r: 209, g: 154, b: 102 },    // #d19a66
-            comment: Color::Rgb { r: 92, g: 99, b: 112 },     // #5c6370
-            doc_comment: Color::Rgb { r: 106, g: 115, b: 130 },
-            r#macro: Color::Rgb { r: 86, g: 182, b: 194 },    // #56b6c2
-            function: Color::Rgb { r: 97, g: 175, b: 239 },   // #61afef
-            attribute: Color::Rgb { r: 209, g: 154, b: 102 },
-            lifetime: Color::Rgb { r: 198, g: 120, b: 221 },
-            operator: Color::Rgb { r: 86, g: 182, b: 194 },
-            badge_nor_bg: Color::Rgb { r: 97, g: 175, b: 239 },
-            badge_ins_bg: Color::Rgb { r: 152, g: 195, b: 121 },
-            badge_cmd_bg: Color::Rgb { r: 209, g: 154, b: 102 },
-            badge_goto_bg: Color::Rgb { r: 198, g: 120, b: 221 },
-            badge_text: Color::Rgb { r: 33, g: 37, b: 43 },
-            picker_border: Color::Rgb { r: 97, g: 175, b: 239 },
+            bg: Color::Rgb {
+                r: 33,
+                g: 37,
+                b: 43,
+            }, // #21252b
+            fg: Color::Rgb {
+                r: 171,
+                g: 178,
+                b: 191,
+            }, // #abb2bf
+            selection_bg: Color::Rgb {
+                r: 55,
+                g: 60,
+                b: 72,
+            }, // #373c48
+            status_bg: Color::Rgb {
+                r: 24,
+                g: 27,
+                b: 33,
+            }, // #181b21
+            status_fg: Color::Rgb {
+                r: 150,
+                g: 157,
+                b: 170,
+            }, // #969daa
+            gutter_fg: Color::Rgb {
+                r: 76,
+                g: 82,
+                b: 99,
+            }, // #4c5263
+            current_line_gutter: Color::Rgb {
+                r: 200,
+                g: 204,
+                b: 212,
+            },
+            keyword: Color::Rgb {
+                r: 198,
+                g: 120,
+                b: 221,
+            }, // #c678dd
+            r#type: Color::Rgb {
+                r: 229,
+                g: 192,
+                b: 123,
+            }, // #e5c07b
+            string: Color::Rgb {
+                r: 152,
+                g: 195,
+                b: 121,
+            }, // #98c379
+            number: Color::Rgb {
+                r: 209,
+                g: 154,
+                b: 102,
+            }, // #d19a66
+            comment: Color::Rgb {
+                r: 92,
+                g: 99,
+                b: 112,
+            }, // #5c6370
+            doc_comment: Color::Rgb {
+                r: 106,
+                g: 115,
+                b: 130,
+            },
+            r#macro: Color::Rgb {
+                r: 86,
+                g: 182,
+                b: 194,
+            }, // #56b6c2
+            function: Color::Rgb {
+                r: 97,
+                g: 175,
+                b: 239,
+            }, // #61afef
+            attribute: Color::Rgb {
+                r: 209,
+                g: 154,
+                b: 102,
+            },
+            lifetime: Color::Rgb {
+                r: 198,
+                g: 120,
+                b: 221,
+            },
+            operator: Color::Rgb {
+                r: 86,
+                g: 182,
+                b: 194,
+            },
+            badge_nor_bg: Color::Rgb {
+                r: 97,
+                g: 175,
+                b: 239,
+            },
+            badge_ins_bg: Color::Rgb {
+                r: 152,
+                g: 195,
+                b: 121,
+            },
+            badge_cmd_bg: Color::Rgb {
+                r: 209,
+                g: 154,
+                b: 102,
+            },
+            badge_goto_bg: Color::Rgb {
+                r: 198,
+                g: 120,
+                b: 221,
+            },
+            badge_text: Color::Rgb {
+                r: 33,
+                g: 37,
+                b: 43,
+            },
+            picker_border: Color::Rgb {
+                r: 97,
+                g: 175,
+                b: 239,
+            },
         }
     }
 
     /// Gruvbox Dark
     pub fn gruvbox_dark() -> Self {
         Self {
-            bg: Color::Rgb { r: 40, g: 40, b: 40 },       // #282828
-            fg: Color::Rgb { r: 235, g: 219, b: 178 },    // #ebdbb2
-            selection_bg: Color::Rgb { r: 80, g: 73, b: 69 }, // #504945
-            status_bg: Color::Rgb { r: 29, g: 32, b: 33 },    // #1d2021
-            status_fg: Color::Rgb { r: 189, g: 174, b: 147 }, // #bdae93
-            gutter_fg: Color::Rgb { r: 124, g: 111, b: 100 }, // #7c6f64
-            current_line_gutter: Color::Rgb { r: 235, g: 219, b: 178 },
-            keyword: Color::Rgb { r: 251, g: 73, b: 52 },     // #fb4934 (red)
-            r#type: Color::Rgb { r: 250, g: 189, b: 47 },     // #fabd2f (yellow)
-            string: Color::Rgb { r: 184, g: 187, b: 38 },     // #b8bb26 (green)
-            number: Color::Rgb { r: 211, g: 134, b: 155 },    // #d3869b (purple)
-            comment: Color::Rgb { r: 146, g: 131, b: 116 },   // #928374
-            doc_comment: Color::Rgb { r: 168, g: 153, b: 132 },
-            r#macro: Color::Rgb { r: 131, g: 165, b: 152 },   // #83a598 (aqua)
-            function: Color::Rgb { r: 131, g: 165, b: 152 },  // #83a598
-            attribute: Color::Rgb { r: 254, g: 128, b: 25 },  // #fe8019 (orange)
-            lifetime: Color::Rgb { r: 211, g: 134, b: 155 },
-            operator: Color::Rgb { r: 235, g: 219, b: 178 },
-            badge_nor_bg: Color::Rgb { r: 131, g: 165, b: 152 },
-            badge_ins_bg: Color::Rgb { r: 184, g: 187, b: 38 },
-            badge_cmd_bg: Color::Rgb { r: 254, g: 128, b: 25 },
-            badge_goto_bg: Color::Rgb { r: 211, g: 134, b: 155 },
-            badge_text: Color::Rgb { r: 40, g: 40, b: 40 },
-            picker_border: Color::Rgb { r: 131, g: 165, b: 152 },
+            bg: Color::Rgb {
+                r: 40,
+                g: 40,
+                b: 40,
+            }, // #282828
+            fg: Color::Rgb {
+                r: 235,
+                g: 219,
+                b: 178,
+            }, // #ebdbb2
+            selection_bg: Color::Rgb {
+                r: 80,
+                g: 73,
+                b: 69,
+            }, // #504945
+            status_bg: Color::Rgb {
+                r: 29,
+                g: 32,
+                b: 33,
+            }, // #1d2021
+            status_fg: Color::Rgb {
+                r: 189,
+                g: 174,
+                b: 147,
+            }, // #bdae93
+            gutter_fg: Color::Rgb {
+                r: 124,
+                g: 111,
+                b: 100,
+            }, // #7c6f64
+            current_line_gutter: Color::Rgb {
+                r: 235,
+                g: 219,
+                b: 178,
+            },
+            keyword: Color::Rgb {
+                r: 251,
+                g: 73,
+                b: 52,
+            }, // #fb4934 (red)
+            r#type: Color::Rgb {
+                r: 250,
+                g: 189,
+                b: 47,
+            }, // #fabd2f (yellow)
+            string: Color::Rgb {
+                r: 184,
+                g: 187,
+                b: 38,
+            }, // #b8bb26 (green)
+            number: Color::Rgb {
+                r: 211,
+                g: 134,
+                b: 155,
+            }, // #d3869b (purple)
+            comment: Color::Rgb {
+                r: 146,
+                g: 131,
+                b: 116,
+            }, // #928374
+            doc_comment: Color::Rgb {
+                r: 168,
+                g: 153,
+                b: 132,
+            },
+            r#macro: Color::Rgb {
+                r: 131,
+                g: 165,
+                b: 152,
+            }, // #83a598 (aqua)
+            function: Color::Rgb {
+                r: 131,
+                g: 165,
+                b: 152,
+            }, // #83a598
+            attribute: Color::Rgb {
+                r: 254,
+                g: 128,
+                b: 25,
+            }, // #fe8019 (orange)
+            lifetime: Color::Rgb {
+                r: 211,
+                g: 134,
+                b: 155,
+            },
+            operator: Color::Rgb {
+                r: 235,
+                g: 219,
+                b: 178,
+            },
+            badge_nor_bg: Color::Rgb {
+                r: 131,
+                g: 165,
+                b: 152,
+            },
+            badge_ins_bg: Color::Rgb {
+                r: 184,
+                g: 187,
+                b: 38,
+            },
+            badge_cmd_bg: Color::Rgb {
+                r: 254,
+                g: 128,
+                b: 25,
+            },
+            badge_goto_bg: Color::Rgb {
+                r: 211,
+                g: 134,
+                b: 155,
+            },
+            badge_text: Color::Rgb {
+                r: 40,
+                g: 40,
+                b: 40,
+            },
+            picker_border: Color::Rgb {
+                r: 131,
+                g: 165,
+                b: 152,
+            },
         }
     }
 
     /// One Half Light — light theme variant
     pub fn one_half_light() -> Self {
         Self {
-            bg: Color::Rgb { r: 250, g: 250, b: 250 },    // #fafafa
-            fg: Color::Rgb { r: 56, g: 58, b: 66 },       // #383a42
-            selection_bg: Color::Rgb { r: 216, g: 222, b: 233 }, // #d8dee9
-            status_bg: Color::Rgb { r: 230, g: 232, b: 236 },   // #e6e8ec
-            status_fg: Color::Rgb { r: 56, g: 58, b: 66 },
-            gutter_fg: Color::Rgb { r: 157, g: 165, b: 180 },   // #9da5b4
-            current_line_gutter: Color::Rgb { r: 56, g: 58, b: 66 },
-            keyword: Color::Rgb { r: 166, g: 38, b: 164 },      // #a626a4 (magenta)
-            r#type: Color::Rgb { r: 193, g: 132, b: 1 },        // #c18401 (orange-yellow)
-            string: Color::Rgb { r: 80, g: 161, b: 79 },        // #50a14f (green)
-            number: Color::Rgb { r: 193, g: 132, b: 1 },        // #c18401
-            comment: Color::Rgb { r: 160, g: 161, b: 167 },     // #a0a1a7
-            doc_comment: Color::Rgb { r: 130, g: 131, b: 137 },
-            r#macro: Color::Rgb { r: 1, g: 132, b: 188 },       // #0184bc (cyan)
-            function: Color::Rgb { r: 64, g: 120, b: 242 },     // #4078f2 (blue)
-            attribute: Color::Rgb { r: 193, g: 132, b: 1 },
-            lifetime: Color::Rgb { r: 166, g: 38, b: 164 },
-            operator: Color::Rgb { r: 56, g: 58, b: 66 },
-            badge_nor_bg: Color::Rgb { r: 64, g: 120, b: 242 },
-            badge_ins_bg: Color::Rgb { r: 80, g: 161, b: 79 },
-            badge_cmd_bg: Color::Rgb { r: 193, g: 132, b: 1 },
-            badge_goto_bg: Color::Rgb { r: 166, g: 38, b: 164 },
-            badge_text: Color::Rgb { r: 255, g: 255, b: 255 },
-            picker_border: Color::Rgb { r: 64, g: 120, b: 242 },
+            bg: Color::Rgb {
+                r: 250,
+                g: 250,
+                b: 250,
+            }, // #fafafa
+            fg: Color::Rgb {
+                r: 56,
+                g: 58,
+                b: 66,
+            }, // #383a42
+            selection_bg: Color::Rgb {
+                r: 216,
+                g: 222,
+                b: 233,
+            }, // #d8dee9
+            status_bg: Color::Rgb {
+                r: 230,
+                g: 232,
+                b: 236,
+            }, // #e6e8ec
+            status_fg: Color::Rgb {
+                r: 56,
+                g: 58,
+                b: 66,
+            },
+            gutter_fg: Color::Rgb {
+                r: 157,
+                g: 165,
+                b: 180,
+            }, // #9da5b4
+            current_line_gutter: Color::Rgb {
+                r: 56,
+                g: 58,
+                b: 66,
+            },
+            keyword: Color::Rgb {
+                r: 166,
+                g: 38,
+                b: 164,
+            }, // #a626a4 (magenta)
+            r#type: Color::Rgb {
+                r: 193,
+                g: 132,
+                b: 1,
+            }, // #c18401 (orange-yellow)
+            string: Color::Rgb {
+                r: 80,
+                g: 161,
+                b: 79,
+            }, // #50a14f (green)
+            number: Color::Rgb {
+                r: 193,
+                g: 132,
+                b: 1,
+            }, // #c18401
+            comment: Color::Rgb {
+                r: 160,
+                g: 161,
+                b: 167,
+            }, // #a0a1a7
+            doc_comment: Color::Rgb {
+                r: 130,
+                g: 131,
+                b: 137,
+            },
+            r#macro: Color::Rgb {
+                r: 1,
+                g: 132,
+                b: 188,
+            }, // #0184bc (cyan)
+            function: Color::Rgb {
+                r: 64,
+                g: 120,
+                b: 242,
+            }, // #4078f2 (blue)
+            attribute: Color::Rgb {
+                r: 193,
+                g: 132,
+                b: 1,
+            },
+            lifetime: Color::Rgb {
+                r: 166,
+                g: 38,
+                b: 164,
+            },
+            operator: Color::Rgb {
+                r: 56,
+                g: 58,
+                b: 66,
+            },
+            badge_nor_bg: Color::Rgb {
+                r: 64,
+                g: 120,
+                b: 242,
+            },
+            badge_ins_bg: Color::Rgb {
+                r: 80,
+                g: 161,
+                b: 79,
+            },
+            badge_cmd_bg: Color::Rgb {
+                r: 193,
+                g: 132,
+                b: 1,
+            },
+            badge_goto_bg: Color::Rgb {
+                r: 166,
+                g: 38,
+                b: 164,
+            },
+            badge_text: Color::Rgb {
+                r: 255,
+                g: 255,
+                b: 255,
+            },
+            picker_border: Color::Rgb {
+                r: 64,
+                g: 120,
+                b: 242,
+            },
         }
     }
 
@@ -664,15 +952,17 @@ impl Theme {
         for dir in search_dirs {
             let direct_file = dir.join(format!("{clean_name}.toml"));
             if let Ok(content) = std::fs::read_to_string(&direct_file)
-                && let Some(theme) = Self::from_toml_str(&content) {
-                    return Some(theme);
-                }
+                && let Some(theme) = Self::from_toml_str(&content)
+            {
+                return Some(theme);
+            }
             let direct_no_ext = dir.join(clean_name);
             if direct_no_ext.is_file()
                 && let Ok(content) = std::fs::read_to_string(&direct_no_ext)
-                && let Some(theme) = Self::from_toml_str(&content) {
-                    return Some(theme);
-                }
+                && let Some(theme) = Self::from_toml_str(&content)
+            {
+                return Some(theme);
+            }
         }
         None
     }
@@ -797,7 +1087,10 @@ impl Theme {
     }
 }
 
-fn parse_color_val(val: &toml::Value, palette: &std::collections::HashMap<&str, &str>) -> Option<Color> {
+fn parse_color_val(
+    val: &toml::Value,
+    palette: &std::collections::HashMap<&str, &str>,
+) -> Option<Color> {
     if let Some(s) = val.as_str() {
         let resolved = palette.get(s).copied().unwrap_or(s);
         parse_color_string(resolved)
@@ -841,7 +1134,10 @@ fn parse_color_string(s: &str) -> Option<Color> {
     }
 }
 
-fn parse_entry_colors(val: &toml::Value, palette: &std::collections::HashMap<&str, &str>) -> (Option<Color>, Option<Color>) {
+fn parse_entry_colors(
+    val: &toml::Value,
+    palette: &std::collections::HashMap<&str, &str>,
+) -> (Option<Color>, Option<Color>) {
     if let Some(table) = val.as_table() {
         let fg = table.get("fg").and_then(|v| parse_color_val(v, palette));
         let bg = table.get("bg").and_then(|v| parse_color_val(v, palette));

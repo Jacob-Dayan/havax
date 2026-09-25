@@ -16,7 +16,9 @@ pub use syntax::grammar;
 pub use ui::picker;
 pub use ui::theme;
 
-pub fn collect_directory_files_with_main_priority(dir: &std::path::Path) -> Vec<std::path::PathBuf> {
+pub fn collect_directory_files_with_main_priority(
+    dir: &std::path::Path,
+) -> Vec<std::path::PathBuf> {
     let mut files = Vec::new();
     let mut dirs_to_visit = vec![dir.to_path_buf()];
 
@@ -27,7 +29,10 @@ pub fn collect_directory_files_with_main_priority(dir: &std::path::Path) -> Vec<
             for entry in entries_vec {
                 let path = entry.path();
                 let file_name = entry.file_name().to_string_lossy().to_string();
-                if file_name.starts_with('.') || file_name == "target" || file_name == "node_modules" {
+                if file_name.starts_with('.')
+                    || file_name == "target"
+                    || file_name == "node_modules"
+                {
                     continue;
                 }
                 if path.is_file() {

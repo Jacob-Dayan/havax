@@ -429,7 +429,10 @@ impl Buffer {
         if self.cursor.row >= self.lines.len() {
             self.lines.push(String::new());
         }
-        let target_col = self.cursor.col.min(self.lines[self.cursor.row].chars().count());
+        let target_col = self
+            .cursor
+            .col
+            .min(self.lines[self.cursor.row].chars().count());
 
         if lines_to_insert.len() == 1 {
             let mut chars: Vec<char> = self.lines[self.cursor.row].chars().collect();
@@ -901,11 +904,13 @@ impl Buffer {
             && matches!(
                 line_chars[pos.col - 1],
                 '(' | ')' | '[' | ']' | '{' | '}' | '<' | '>'
-            ) {
+            )
+        {
             pos.col - 1
         } else {
             // Find nearest enclosing bracket pair
-            if let Some((open_pos, close_pos)) = self.find_enclosing_brackets(pos, '(')
+            if let Some((open_pos, close_pos)) = self
+                .find_enclosing_brackets(pos, '(')
                 .or_else(|| self.find_enclosing_brackets(pos, '{'))
                 .or_else(|| self.find_enclosing_brackets(pos, '['))
             {
@@ -995,7 +1000,11 @@ impl Buffer {
     }
 
     #[allow(clippy::needless_range_loop, clippy::chunks_exact_to_as_chunks)]
-    pub fn find_enclosing_brackets(&self, pos: Position, delim: char) -> Option<(Position, Position)> {
+    pub fn find_enclosing_brackets(
+        &self,
+        pos: Position,
+        delim: char,
+    ) -> Option<(Position, Position)> {
         let (open_char, close_char) = get_matching_pair(delim);
 
         if open_char == close_char {
@@ -1013,8 +1022,14 @@ impl Buffer {
                     let q_end = chunk[1];
                     if pos.col >= q_start && pos.col <= q_end {
                         return Some((
-                            Position { row: pos.row, col: q_start },
-                            Position { row: pos.row, col: q_end },
+                            Position {
+                                row: pos.row,
+                                col: q_start,
+                            },
+                            Position {
+                                row: pos.row,
+                                col: q_end,
+                            },
                         ));
                     }
                 }
@@ -1082,7 +1097,11 @@ impl Buffer {
 
             self.cursor = Position {
                 row: end.row,
-                col: if start.row == end.row { end.col + 2 } else { end.col + 1 },
+                col: if start.row == end.row {
+                    end.col + 2
+                } else {
+                    end.col + 1
+                },
             };
             self.anchor = start;
         } else {
@@ -1100,10 +1119,14 @@ impl Buffer {
                     let mut start = col;
                     let mut end = col;
                     if chars[col].is_alphanumeric() || chars[col] == '_' {
-                        while start > 0 && (chars[start - 1].is_alphanumeric() || chars[start - 1] == '_') {
+                        while start > 0
+                            && (chars[start - 1].is_alphanumeric() || chars[start - 1] == '_')
+                        {
                             start -= 1;
                         }
-                        while end + 1 < chars.len() && (chars[end + 1].is_alphanumeric() || chars[end + 1] == '_') {
+                        while end + 1 < chars.len()
+                            && (chars[end + 1].is_alphanumeric() || chars[end + 1] == '_')
+                        {
                             end += 1;
                         }
                         end += 1; // exclusive end
@@ -1192,20 +1215,31 @@ impl Buffer {
                 while start > 0 && (chars[start - 1].is_alphanumeric() || chars[start - 1] == '_') {
                     start -= 1;
                 }
-                while end + 1 < chars.len() && (chars[end + 1].is_alphanumeric() || chars[end + 1] == '_') {
+                while end + 1 < chars.len()
+                    && (chars[end + 1].is_alphanumeric() || chars[end + 1] == '_')
+                {
                     end += 1;
                 }
                 while end + 1 < chars.len() && chars[end + 1].is_whitespace() {
                     end += 1;
                 }
-                self.anchor = Position { row: self.cursor.row, col: start };
-                self.cursor = Position { row: self.cursor.row, col: end + 1 };
+                self.anchor = Position {
+                    row: self.cursor.row,
+                    col: start,
+                };
+                self.cursor = Position {
+                    row: self.cursor.row,
+                    col: end + 1,
+                };
                 return true;
             }
         }
         if let Some((open_pos, close_pos)) = self.find_enclosing_brackets(self.cursor, delim) {
             self.anchor = open_pos;
-            self.cursor = Position { row: close_pos.row, col: close_pos.col + 1 };
+            self.cursor = Position {
+                row: close_pos.row,
+                col: close_pos.col + 1,
+            };
             true
         } else {
             false
@@ -1226,16 +1260,27 @@ impl Buffer {
                 while start > 0 && (chars[start - 1].is_alphanumeric() || chars[start - 1] == '_') {
                     start -= 1;
                 }
-                while end + 1 < chars.len() && (chars[end + 1].is_alphanumeric() || chars[end + 1] == '_') {
+                while end + 1 < chars.len()
+                    && (chars[end + 1].is_alphanumeric() || chars[end + 1] == '_')
+                {
                     end += 1;
                 }
-                self.anchor = Position { row: self.cursor.row, col: start };
-                self.cursor = Position { row: self.cursor.row, col: end + 1 };
+                self.anchor = Position {
+                    row: self.cursor.row,
+                    col: start,
+                };
+                self.cursor = Position {
+                    row: self.cursor.row,
+                    col: end + 1,
+                };
                 return true;
             }
         }
         if let Some((open_pos, close_pos)) = self.find_enclosing_brackets(self.cursor, delim) {
-            self.anchor = Position { row: open_pos.row, col: open_pos.col + 1 };
+            self.anchor = Position {
+                row: open_pos.row,
+                col: open_pos.col + 1,
+            };
             self.cursor = close_pos;
             true
         } else {

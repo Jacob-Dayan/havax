@@ -45,7 +45,10 @@ pub fn collect_directory_files_with_main_priority(dir: &std::path::Path) -> Vec<
             for entry in entries_vec {
                 let path = entry.path();
                 let file_name = entry.file_name().to_string_lossy().to_string();
-                if file_name.starts_with('.') || file_name == "target" || file_name == "node_modules" {
+                if file_name.starts_with('.')
+                    || file_name == "target"
+                    || file_name == "node_modules"
+                {
                     continue;
                 }
                 if path.is_file() {
@@ -131,11 +134,7 @@ fn main() -> ExitCode {
     // Load TOML configuration
     let config_path = cli.config.clone().or_else(|| {
         let def = Config::default_config_path();
-        if def.exists() {
-            Some(def)
-        } else {
-            None
-        }
+        if def.exists() { Some(def) } else { None }
     });
     let config = Config::load(config_path.as_deref());
 

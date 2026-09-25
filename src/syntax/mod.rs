@@ -172,7 +172,10 @@ pub fn tokenize_rust_line(line: &str) -> Vec<(char, Color)> {
 
             let color = if is_macro {
                 COLOR_MACRO
-            } else if is_followed_by_double_colon && word.chars().next().is_some_and(|c| !c.is_uppercase()) && !RUST_KEYWORDS.contains(&word.as_str()) {
+            } else if is_followed_by_double_colon
+                && word.chars().next().is_some_and(|c| !c.is_uppercase())
+                && !RUST_KEYWORDS.contains(&word.as_str())
+            {
                 // Scoped module prefix e.g. `module` in `module::func` or `std` in `std::collections`
                 COLOR_MODULE
             } else if RUST_KEYWORDS.contains(&word.as_str()) {
@@ -459,17 +462,8 @@ fn walk_tree_node(
         | "multiline_basic_string"
         | "literal_string"
         | "multiline_literal_string" => Some(theme.string),
-        "integer_literal"
-        | "float_literal"
-        | "integer"
-        | "float"
-        | "dec_int"
-        | "hex_int"
-        | "oct_int"
-        | "bin_int"
-        | "local_date"
-        | "local_time"
-        | "local_date_time"
+        "integer_literal" | "float_literal" | "integer" | "float" | "dec_int" | "hex_int"
+        | "oct_int" | "bin_int" | "local_date" | "local_time" | "local_date_time"
         | "offset_date_time" => Some(theme.number),
         "boolean_literal" | "boolean" => Some(theme.keyword),
         "attribute_item"
@@ -500,13 +494,19 @@ fn walk_tree_node(
             ) {
                 specific_color = Some(theme.function);
             } else if pkind == "scoped_identifier" || pkind == "scoped_type_identifier" {
-                if let Some(prev) = node.prev_sibling() && prev.kind() == "::" {
-                    if let Some(grandparent) = parent.parent() && grandparent.kind() == "call_expression" {
+                if let Some(prev) = node.prev_sibling()
+                    && prev.kind() == "::"
+                {
+                    if let Some(grandparent) = parent.parent()
+                        && grandparent.kind() == "call_expression"
+                    {
                         specific_color = Some(theme.function);
                     } else {
                         specific_color = Some(theme.r#type);
                     }
-                } else if let Some(next) = node.next_sibling() && next.kind() == "::" {
+                } else if let Some(next) = node.next_sibling()
+                    && next.kind() == "::"
+                {
                     specific_color = Some(theme.r#type);
                 }
             } else if pkind == "field_expression" {
@@ -515,8 +515,12 @@ fn walk_tree_node(
                 {
                     specific_color = Some(theme.function);
                 }
-            } else if pkind == "use_declaration" || pkind == "use_list" || pkind == "use_as_clause"
-                || pkind == "enum_variant" || pkind == "match_pattern" || pkind == "tuple_struct_pattern"
+            } else if pkind == "use_declaration"
+                || pkind == "use_list"
+                || pkind == "use_as_clause"
+                || pkind == "enum_variant"
+                || pkind == "match_pattern"
+                || pkind == "tuple_struct_pattern"
             {
                 specific_color = Some(theme.r#type);
             }
@@ -619,7 +623,10 @@ pub fn highlight_line_treesitter(
         // Apply Rainbow Bracket Highlighting on AST output
         let mut bracket_depth: usize = 0;
         for (i, &ch) in chars.iter().enumerate() {
-            if colors[i] == theme.comment || colors[i] == theme.doc_comment || colors[i] == theme.string {
+            if colors[i] == theme.comment
+                || colors[i] == theme.doc_comment
+                || colors[i] == theme.string
+            {
                 continue;
             }
             if matches!(ch, '(' | '[' | '{') {

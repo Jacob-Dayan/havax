@@ -213,7 +213,10 @@ impl Editor {
             "qa" | "qall" | "quitall" => {
                 let has_modified = self.buffers.iter().any(|b| b.modified);
                 if has_modified {
-                    self.set_status("Unsaved changes in buffers! Use :qa! or :wa to override.", true);
+                    self.set_status(
+                        "Unsaved changes in buffers! Use :qa! or :wa to override.",
+                        true,
+                    );
                 } else {
                     return Ok(false);
                 }
@@ -406,14 +409,7 @@ impl Editor {
             }
             // LSP and Tree-sitter Commands
             "lsp-restart" => {
-                let root = self
-                    .config_path
-                    .as_ref()
-                    .and_then(|p| p.parent())
-                    .map(|p| p.to_path_buf())
-                    .unwrap_or_else(|| {
-                        std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."))
-                    });
+                let root = crate::lsp::find_workspace_root(Some(&self.buf().path));
                 if let Some(mut lsp) = self.lsp.take() {
                     lsp.stop();
                 }
@@ -427,9 +423,7 @@ impl Editor {
                     (true, true) => "LSP: restarted rust-analyzer and taplo",
                     (true, false) => "LSP: restarted rust-analyzer",
                     (false, true) => "LSP: restarted taplo",
-                    (false, false) => {
-                        "LSP: servers not found in PATH (re-initialized LSP status)"
-                    }
+                    (false, false) => "LSP: servers not found in PATH (re-initialized LSP status)",
                 };
                 self.set_status(status_msg, false);
             }

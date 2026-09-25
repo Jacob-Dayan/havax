@@ -780,34 +780,42 @@ impl Editor {
                             self.mode = return_mode;
                         }
                     },
-                    crate::types::MatchState::SurroundReplaceTo(old_c) => match code {
-                        KeyCode::Char(c) => {
-                            let (new_open, new_close) = crate::buffer::get_matching_pair(c);
-                            if self.buf_mut().surround_replace(old_c, new_open, new_close) {
-                                self.notify_lsp_change();
-                                self.set_status(
+                    crate::types::MatchState::SurroundReplaceTo(old_c) => {
+                        match code {
+                            KeyCode::Char(c) => {
+                                let (new_open, new_close) = crate::buffer::get_matching_pair(c);
+                                if self.buf_mut().surround_replace(old_c, new_open, new_close) {
+                                    self.notify_lsp_change();
+                                    self.set_status(
                                     &format!("Replaced surround '{old_c}' with '{new_open}{new_close}'"),
                                     false,
                                 );
-                            } else {
-                                self.set_status(&format!("No enclosing delimiter '{old_c}' found"), true);
+                                } else {
+                                    self.set_status(
+                                        &format!("No enclosing delimiter '{old_c}' found"),
+                                        true,
+                                    );
+                                }
+                                self.mode = Mode::Normal;
                             }
-                            self.mode = Mode::Normal;
+                            KeyCode::Esc => {
+                                self.mode = return_mode;
+                            }
+                            _ => {
+                                self.mode = return_mode;
+                            }
                         }
-                        KeyCode::Esc => {
-                            self.mode = return_mode;
-                        }
-                        _ => {
-                            self.mode = return_mode;
-                        }
-                    },
+                    }
                     crate::types::MatchState::SurroundDelete => match code {
                         KeyCode::Char(c) => {
                             if self.buf_mut().surround_delete(c) {
                                 self.notify_lsp_change();
                                 self.set_status(&format!("Deleted surround '{c}'"), false);
                             } else {
-                                self.set_status(&format!("No enclosing delimiter '{c}' found"), true);
+                                self.set_status(
+                                    &format!("No enclosing delimiter '{c}' found"),
+                                    true,
+                                );
                             }
                             self.mode = Mode::Normal;
                         }
@@ -1005,7 +1013,9 @@ impl Editor {
                             let prefix = self.command_prefix.as_deref().unwrap_or("");
                             let matches = crate::editor::commands::get_command_completions(prefix);
                             if !matches.is_empty() {
-                                let prev = if self.command_completion_idx == usize::MAX || self.command_completion_idx == 0 {
+                                let prev = if self.command_completion_idx == usize::MAX
+                                    || self.command_completion_idx == 0
+                                {
                                     matches.len() - 1
                                 } else {
                                     self.command_completion_idx - 1
