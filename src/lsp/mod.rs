@@ -2578,11 +2578,11 @@ pub fn is_subsequence(sub: &str, target: &str) -> bool {
 pub fn get_buffer_diagnostics(
     path: &Path,
     tree: Option<&tree_sitter::Tree>,
-    lines: &[String],
+    _lines: &[String],
     lsp: Option<&LspClient>,
-    lang: &str,
+    _lang: &str,
 ) -> Vec<Diagnostic> {
-    // 1. Check if language server has reported diagnostics for this file
+    // 1. Language server diagnostics take highest precedence
     if let Some(lsp) = lsp {
         let diags = lsp.get_diagnostics(path);
         if !diags.is_empty() {
@@ -2590,26 +2590,10 @@ pub fn get_buffer_diagnostics(
         }
     }
 
-    // 2. Tree-sitter syntax error AST traversal (works for both Rust and TOML)
+    // 2. Tree-sitter syntax error AST traversal (only actual error/missing nodes)
     let mut diags = Vec::new();
     if let Some(t) = tree {
-        collect_tree_sitter_errors(t.root_node(), lines, &mut diags);
-    }
-
-    // 3. Common Rust syntax error heuristics (only for Rust files)
-    if diags.is_empty() && lang == "rust" {
-        for (row, line) in lines.iter().enumerate() {
-            let trimmed = line.trim();
-            if trimmed.starts_with("let ") && trimmed.contains('=') && !trimmed.ends_with(';') {
-                diags.push(Diagnostic {
-                    line: row,
-                    col_start: 0,
-                    col_end: line.len(),
-                    severity: DiagnosticSeverity::Error,
-                    message: "Syntax Error: expected SEMICOLON".to_string(),
-                });
-            }
-        }
+        collect_tree_sitter_errors(t.root_node(), &mut diags);
     }
 
     diags
@@ -2617,22 +2601,17 @@ pub fn get_buffer_diagnostics(
 
 fn collect_tree_sitter_errors(
     node: tree_sitter::Node,
-    lines: &[String],
     diags: &mut Vec<Diagnostic>,
 ) {
     if node.is_error() || node.is_missing() {
         let start = node.start_position();
         let end = node.end_position();
         let row = start.row;
-        let line_text = lines.get(row).map(|s| s.as_str()).unwrap_or("");
-        let msg =
-            if line_text.trim_start().starts_with("let ") && !line_text.trim_end().ends_with(';') {
-                "Syntax Error: expected SEMICOLON".to_string()
-            } else if node.is_missing() {
-                format!("Syntax Error: expected {}", node.kind())
-            } else {
-                "Syntax Error: unexpected token".to_string()
-            };
+        let msg = if node.is_missing() {
+            format!("Syntax Error: expected {}", node.kind())
+        } else {
+            "Syntax Error: unexpected token".to_string()
+        };
 
         if !diags.iter().any(|d| d.line == row) {
             diags.push(Diagnostic {
@@ -2646,7 +2625,7 @@ fn collect_tree_sitter_errors(
     } else {
         for i in 0..node.child_count() {
             if let Some(child) = node.child(i) {
-                collect_tree_sitter_errors(child, lines, diags);
+                collect_tree_sitter_errors(child, diags);
             }
         }
     }

@@ -587,7 +587,26 @@ hidden = false
         assert!(diag.is_some());
         let err = diag.unwrap();
         assert_eq!(err.severity, havax::lsp::DiagnosticSeverity::Error);
-        assert_eq!(err.message, "Syntax Error: expected SEMICOLON");
+        assert!(err.message.starts_with("Syntax Error:"));
+
+        // Verify that multiline struct/closure opening lines do NOT get fake syntax errors
+        let multiline = vec![
+            "fn main() {".to_string(),
+            "    let mut editor = Editor {".to_string(),
+            "        theme: Theme::default(),".to_string(),
+            "    };".to_string(),
+            "    let closure = |x: i32| {".to_string(),
+            "        x + 1".to_string(),
+            "    };".to_string(),
+            "}".to_string(),
+        ];
+        let mut valid_buf = Buffer::new(PathBuf::from("valid.rs")).unwrap();
+        valid_buf.lines = multiline.clone();
+        valid_buf.reparse();
+
+        let valid_diags =
+            havax::lsp::get_buffer_diagnostics(&PathBuf::from("valid.rs"), valid_buf.tree.as_ref(), &multiline, None, "rust");
+        assert!(valid_diags.is_empty(), "Must not produce any syntax errors on valid multiline struct/closure declarations");
     }
 
     #[test]
