@@ -338,7 +338,16 @@ impl Editor {
             {
                 filter_start -= 1;
             }
-            let filter_prefix: String = chars[filter_start..cur_col].iter().collect();
+            let mut filter_prefix: String = chars[filter_start..cur_col].iter().collect();
+
+            if is_rust
+                && filter_prefix.is_empty()
+                && line[..cur_col].trim() == "fn"
+                && let Some(fn_idx) = line[..cur_col].find("fn")
+            {
+                filter_start = fn_idx;
+                filter_prefix = "fn".to_string();
+            }
 
             if is_rust
                 && filter_start >= 2
@@ -437,6 +446,20 @@ impl Editor {
 
         // 2. Tree-Sitter AST symbol extraction
         let tree_ref = self.buf().tree.as_ref();
+        if is_rust {
+            let trait_items = crate::lsp::collect_trait_impl_completions(
+                tree_ref,
+                &lines,
+                row,
+                &filter_prefix,
+            );
+            for item in trait_items {
+                if !items.iter().any(|it| it.label == item.label) {
+                    items.push(item);
+                }
+            }
+        }
+
         if let Some(scope) = &scope_path {
             let ast_scoped = crate::lsp::extract_tree_sitter_scoped_symbols(
                 tree_ref,
@@ -529,18 +552,45 @@ impl Editor {
             let row = buf.cursor.row;
             if row < buf.lines.len() {
                 buf.push_history();
-                let mut chars: Vec<char> = buf.lines[row].chars().collect();
+                let line_str = buf.lines[row].clone();
+                let chars: Vec<char> = line_str.chars().collect();
                 let cur_col = buf.cursor.col.min(chars.len());
                 let start_col = trigger_col.min(cur_col);
 
-                chars.drain(start_col..cur_col);
-                let insert_chars: Vec<char> = insert_text.chars().collect();
-                for (i, c) in insert_chars.iter().enumerate() {
-                    chars.insert(start_col + i, *c);
+                let prefix_before: String = chars[..start_col].iter().collect();
+                let suffix_after: String = chars[cur_col..].iter().collect();
+
+                let indent_len = prefix_before.len() - prefix_before.trim_start().len();
+                let base_indent = " ".repeat(indent_len);
+
+                let (cleaned_lines, (rel_row, target_col)) =
+                    expand_snippet(&insert_text, &base_indent, start_col);
+
+                if cleaned_lines.len() <= 1 {
+                    let first_line = if cleaned_lines.is_empty() {
+                        String::new()
+                    } else {
+                        cleaned_lines[0].clone()
+                    };
+                    let new_line = format!("{prefix_before}{first_line}{suffix_after}");
+                    buf.lines[row] = new_line;
+                    buf.cursor.row = row;
+                    buf.cursor.col = target_col;
+                } else {
+                    let first_line = format!("{prefix_before}{}", cleaned_lines[0]);
+                    let last_idx = cleaned_lines.len() - 1;
+                    let last_line = format!("{}{suffix_after}", cleaned_lines[last_idx]);
+
+                    buf.lines[row] = first_line;
+                    for (i, line) in cleaned_lines.iter().enumerate().take(last_idx).skip(1) {
+                        buf.lines.insert(row + i, line.clone());
+                    }
+                    buf.lines.insert(row + last_idx, last_line);
+
+                    buf.cursor.row = row + rel_row;
+                    buf.cursor.col = target_col;
                 }
 
-                buf.lines[row] = chars.into_iter().collect();
-                buf.cursor.col = start_col + insert_chars.len();
                 buf.anchor = buf.cursor;
                 buf.modified = true;
                 buf.needs_reparse = true;
@@ -1235,4 +1285,75 @@ pub fn base64_encode(data: &[u8]) -> String {
         }
     }
     result
+}
+
+pub fn expand_snippet(
+    snippet: &str,
+    base_indent: &str,
+    start_col: usize,
+) -> (Vec<String>, (usize, usize)) {
+    let raw_lines: Vec<&str> = snippet.split('\n').collect();
+    let mut cleaned_lines = Vec::new();
+    let mut target_cursor = None;
+
+    for (line_idx, raw_line) in raw_lines.iter().enumerate() {
+        let mut line_str = String::new();
+        let mut chars = raw_line.chars().peekable();
+        let mut col_in_line = 0;
+
+        while let Some(c) = chars.next() {
+            if c == '$' {
+                if chars.peek() == Some(&'1') || chars.peek() == Some(&'0') {
+                    chars.next();
+                    if target_cursor.is_none() {
+                        let col_offset = if line_idx == 0 { start_col } else { base_indent.len() };
+                        target_cursor = Some((line_idx, col_offset + col_in_line));
+                    }
+                } else if chars.peek() == Some(&'2') || chars.peek() == Some(&'3') {
+                    chars.next();
+                } else if chars.peek() == Some(&'{') {
+                    chars.next();
+                    let mut placeholder = String::new();
+                    for ch in chars.by_ref() {
+                        if ch == '}' {
+                            break;
+                        }
+                        placeholder.push(ch);
+                    }
+                    let def_val = placeholder.split(':').nth(1).unwrap_or("");
+                    if target_cursor.is_none() {
+                        let col_offset = if line_idx == 0 { start_col } else { base_indent.len() };
+                        target_cursor = Some((line_idx, col_offset + col_in_line));
+                    }
+                    line_str.push_str(def_val);
+                    col_in_line += def_val.len();
+                } else {
+                    line_str.push(c);
+                    col_in_line += 1;
+                }
+            } else {
+                line_str.push(c);
+                col_in_line += 1;
+            }
+        }
+
+        if line_idx == 0 {
+            cleaned_lines.push(line_str);
+        } else {
+            cleaned_lines.push(format!("{base_indent}{line_str}"));
+        }
+    }
+
+    let target = target_cursor.unwrap_or_else(|| {
+        let last_idx = cleaned_lines.len().saturating_sub(1);
+        let last_len = cleaned_lines[last_idx].len();
+        let col_offset = if last_idx == 0 {
+            start_col
+        } else {
+            0
+        };
+        (last_idx, col_offset + last_len)
+    });
+
+    (cleaned_lines, target)
 }

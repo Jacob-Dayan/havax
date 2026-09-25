@@ -44,11 +44,22 @@ pub struct EditorConfig {
     #[serde(default = "default_mouse")]
     pub mouse: bool,
 
+    #[serde(
+        default = "default_auto_pairs",
+        rename = "auto-pairs",
+        alias = "auto_pairs"
+    )]
+    pub auto_pairs: bool,
+
     #[serde(default, rename = "cursor-shape", alias = "cursor_shape")]
     pub cursor_shape: CursorShapeConfig,
 
     #[serde(default, rename = "file-picker", alias = "file_picker")]
     pub file_picker: FilePickerConfig,
+}
+
+fn default_auto_pairs() -> bool {
+    true
 }
 
 fn default_auto_format() -> bool {
@@ -66,6 +77,7 @@ impl Default for EditorConfig {
             bufferline: Bufferline::Always,
             auto_format: true,
             mouse: true,
+            auto_pairs: true,
             cursor_shape: CursorShapeConfig::default(),
             file_picker: FilePickerConfig::default(),
         }

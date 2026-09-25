@@ -639,6 +639,10 @@ impl Buffer {
     // --- Insert Operations ---
 
     pub fn insert_char(&mut self, c: char) {
+        self.insert_char_auto_pair(c, false);
+    }
+
+    pub fn insert_char_auto_pair(&mut self, c: char, auto_pairs: bool) {
         if self.cursor.row >= self.lines.len() {
             self.lines.push(String::new());
         }
@@ -657,6 +661,48 @@ impl Buffer {
 
         let mut chars: Vec<char> = self.lines[self.cursor.row].chars().collect();
         let col = self.cursor.col.min(chars.len());
+
+        if auto_pairs {
+            // Check if user is typing a closing char and it matches the next char
+            if col < chars.len()
+                && chars[col] == c
+                && (c == ')' || c == ']' || c == '}' || c == '"' || c == '\'' || c == '`')
+            {
+                self.cursor.col += 1;
+                self.anchor = self.cursor;
+                return;
+            }
+
+            let pair = match c {
+                '(' => Some(')'),
+                '[' => Some(']'),
+                '{' => Some('}'),
+                '"' => Some('"'),
+                '`' => Some('`'),
+                '\'' => {
+                    let prev_is_ident = col > 0
+                        && (chars[col - 1].is_alphanumeric() || chars[col - 1] == '_');
+                    if prev_is_ident {
+                        None
+                    } else {
+                        Some('\'')
+                    }
+                }
+                _ => None,
+            };
+
+            if let Some(closing) = pair {
+                chars.insert(col, c);
+                chars.insert(col + 1, closing);
+                self.lines[self.cursor.row] = chars.into_iter().collect();
+                self.cursor.col += 1;
+                self.anchor = self.cursor;
+                self.modified = true;
+                self.needs_reparse = true;
+                return;
+            }
+        }
+
         chars.insert(col, c);
         self.lines[self.cursor.row] = chars.into_iter().collect();
         self.cursor.col += 1;
@@ -734,9 +780,36 @@ impl Buffer {
     }
 
     pub fn delete_char(&mut self) {
+        self.delete_char_auto_pair(false);
+    }
+
+    pub fn delete_char_auto_pair(&mut self, auto_pairs: bool) {
         if self.cursor.col > 0 {
             let line = &mut self.lines[self.cursor.row];
             let mut chars: Vec<char> = line.chars().collect();
+            let col = self.cursor.col.min(chars.len());
+
+            if auto_pairs && col > 0 && col < chars.len() {
+                let prev = chars[col - 1];
+                let next = chars[col];
+                let is_pair = (prev == '(' && next == ')')
+                    || (prev == '[' && next == ']')
+                    || (prev == '{' && next == '}')
+                    || (prev == '"' && next == '"')
+                    || (prev == '\'' && next == '\'')
+                    || (prev == '`' && next == '`');
+                if is_pair {
+                    chars.remove(col);
+                    chars.remove(col - 1);
+                    *line = chars.into_iter().collect();
+                    self.cursor.col -= 1;
+                    self.anchor = self.cursor;
+                    self.modified = true;
+                    self.needs_reparse = true;
+                    return;
+                }
+            }
+
             if self.cursor.col >= TAB_SIZE
                 && chars[..self.cursor.col].iter().all(|c| *c == ' ')
                 && self.cursor.col.is_multiple_of(TAB_SIZE)

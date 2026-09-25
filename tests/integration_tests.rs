@@ -1,11 +1,11 @@
 //! Integration tests for the havax editor
 
 use havax::buffer::Buffer;
-use havax::config::{self, Config};
+use havax::config::{self, Config, EditorConfig};
 use havax::editor::{self, Editor};
 use havax::lsp;
 use havax::syntax::{self, *};
-use havax::types::{self, Position};
+use havax::types::{self, MatchState, Mode, Position};
 use havax::ui::{self, picker::FilePicker, theme::*};
 use havax::{Cli, collect_directory_files_with_main_priority};
 use std::path::PathBuf;
@@ -2683,5 +2683,180 @@ fn test_treesitter_custom_struct_enum_and_method_ast_completions() {
     assert!(
         enum_labels.contains(&"Deleted"),
         "Must contain enum variant Deleted"
+    );
+}
+
+#[test]
+fn test_auto_pairs_parentheses_brackets_and_backspace() {
+    let mut buf = Buffer::new(PathBuf::from("src/main.rs")).unwrap();
+    buf.lines = vec!["".to_string()];
+    buf.cursor = types::Position { row: 0, col: 0 };
+
+    // 1. Typing '(' inserts '()' with cursor inside
+    buf.insert_char_auto_pair('(', true);
+    assert_eq!(buf.lines[0], "()");
+    assert_eq!(buf.cursor.col, 1);
+
+    // 2. Backspace inside '()' deletes both
+    buf.delete_char_auto_pair(true);
+    assert_eq!(buf.lines[0], "");
+    assert_eq!(buf.cursor.col, 0);
+
+    // 3. Typing '{' inserts '{}'
+    buf.insert_char_auto_pair('{', true);
+    assert_eq!(buf.lines[0], "{}");
+    assert_eq!(buf.cursor.col, 1);
+
+    // 4. Typing '}' while at the closing brace steps over it
+    buf.insert_char_auto_pair('}', true);
+    assert_eq!(buf.lines[0], "{}");
+    assert_eq!(buf.cursor.col, 2);
+}
+
+#[test]
+fn test_snippet_template_expansion_struct_enum_fn_closure() {
+    let mut buf = Buffer::new(PathBuf::from("src/main.rs")).unwrap();
+    buf.lines = vec!["    stru".to_string()];
+    buf.cursor = types::Position { row: 0, col: 8 };
+
+    let mut editor = Editor {
+        buffers: vec![buf],
+        current_buffer: 0,
+        mode: Mode::Insert,
+        goto_return_mode: Mode::Normal,
+        match_return_mode: Mode::Normal,
+        match_state: MatchState::Menu,
+        clipboard: String::new(),
+        command_buffer: String::new(),
+        command_prefix: None,
+        command_completion_idx: 0,
+        status_message: None,
+        file_picker: None,
+        stdout: std::io::stdout(),
+        config: Config {
+            theme: "one-half-dark".to_string(),
+            editor: EditorConfig::default(),
+        },
+        config_path: None,
+        theme: Theme::default(),
+        lsp: None,
+        toml_lsp: None,
+        completion: havax::completion::CompletionMenu::new(),
+        lsp_doc_version: 1,
+        prev_buffer_idx: 0,
+        active_completion_req: 0,
+        pending_c: false,
+    };
+
+    // Trigger completion for "stru" -> accepts struct template
+    editor.trigger_completion();
+    assert!(editor.completion.visible);
+    let struct_item = editor
+        .completion
+        .items
+        .iter()
+        .find(|it| it.label == "struct")
+        .expect("struct snippet item");
+    assert!(struct_item.insert_text.as_ref().unwrap().contains('$'));
+
+    // Accept snippet
+    editor.accept_completion();
+    assert_eq!(editor.buf().lines.len(), 3);
+    assert_eq!(editor.buf().lines[0], "    struct  {");
+    assert_eq!(editor.buf().lines[1], "        ");
+    assert_eq!(editor.buf().lines[2], "    }");
+    // Cursor lands right at struct <CURSOR> {
+    assert_eq!(editor.buf().cursor.row, 0);
+    assert_eq!(editor.buf().cursor.col, 11);
+}
+
+#[test]
+fn test_trait_implementation_autocomplete_methods() {
+    let code = vec![
+        "trait CustomDataHandler {".to_string(),
+        "    fn handle_event(&self, event_id: u64) -> bool;".to_string(),
+        "    fn reset_state(&mut self);".to_string(),
+        "}".to_string(),
+        "".to_string(),
+        "struct AppService;".to_string(),
+        "".to_string(),
+        "impl CustomDataHandler for AppService {".to_string(),
+        "    fn ".to_string(),
+        "}".to_string(),
+    ];
+    let mut buf = Buffer::new(PathBuf::from("src/main.rs")).unwrap();
+    buf.lines = code;
+    buf.cursor = types::Position { row: 8, col: 7 };
+    buf.reparse();
+
+    let mut editor = Editor {
+        buffers: vec![buf],
+        current_buffer: 0,
+        mode: Mode::Insert,
+        goto_return_mode: Mode::Normal,
+        match_return_mode: Mode::Normal,
+        match_state: MatchState::Menu,
+        clipboard: String::new(),
+        command_buffer: String::new(),
+        command_prefix: None,
+        command_completion_idx: 0,
+        status_message: None,
+        file_picker: None,
+        stdout: std::io::stdout(),
+        config: Config {
+            theme: "one-half-dark".to_string(),
+            editor: EditorConfig::default(),
+        },
+        config_path: None,
+        theme: Theme::default(),
+        lsp: None,
+        toml_lsp: None,
+        completion: havax::completion::CompletionMenu::new(),
+        lsp_doc_version: 1,
+        prev_buffer_idx: 0,
+        active_completion_req: 0,
+        pending_c: false,
+    };
+
+    editor.trigger_completion();
+    assert!(editor.completion.visible);
+    let labels: Vec<&str> = editor
+        .completion
+        .items
+        .iter()
+        .map(|it| it.label.as_str())
+        .collect();
+
+    assert!(
+        labels.contains(&"fn handle_event") || labels.contains(&"handle_event"),
+        "Must offer handle_event trait method completion"
+    );
+    assert!(
+        labels.contains(&"fn reset_state") || labels.contains(&"reset_state"),
+        "Must offer reset_state trait method completion"
+    );
+}
+
+#[test]
+fn test_closure_parameter_and_body_completions() {
+    let code = vec![
+        "fn main() {".to_string(),
+        "    let items = vec![1, 2, 3];".to_string(),
+        "    items.iter().map(|custom_item| {".to_string(),
+        "        cust".to_string(),
+        "    });".to_string(),
+        "}".to_string(),
+    ];
+    let mut buf = Buffer::new(PathBuf::from("src/main.rs")).unwrap();
+    buf.lines = code;
+    buf.cursor = types::Position { row: 3, col: 12 };
+    buf.reparse();
+
+    let symbols = havax::lsp::extract_tree_sitter_symbols(buf.tree.as_ref(), &buf.lines, "cust");
+    assert!(
+        symbols
+            .iter()
+            .any(|s| s.label == "custom_item" && s.kind_name == "variable"),
+        "Must extract closure parameter custom_item as variable completion"
     );
 }

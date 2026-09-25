@@ -900,6 +900,7 @@ impl Editor {
                     self.trigger_completion();
                 } else {
                     let is_esc = code == KeyCode::Esc;
+                    let auto_pairs = self.config.editor.auto_pairs;
                     let mut text_changed = false;
                     {
                         let buf = self.buf_mut();
@@ -919,7 +920,7 @@ impl Editor {
                                 text_changed = true;
                             }
                             KeyCode::Backspace => {
-                                buf.delete_char();
+                                buf.delete_char_auto_pair(auto_pairs);
                                 text_changed = true;
                             }
                             KeyCode::Delete => {
@@ -949,7 +950,7 @@ impl Editor {
                                 if !modifiers.contains(KeyModifiers::CONTROL)
                                     && !modifiers.contains(KeyModifiers::ALT) =>
                             {
-                                buf.insert_char(c);
+                                buf.insert_char_auto_pair(c, auto_pairs);
                                 text_changed = true;
                             }
                             _ => {}

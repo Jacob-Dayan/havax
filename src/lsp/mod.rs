@@ -928,6 +928,247 @@ pub fn extract_tree_sitter_scoped_symbols(
     filtered
 }
 
+/// Extracts trait method completions when the cursor is inside `impl Trait for CustomData`
+pub fn collect_trait_impl_completions(
+    tree: Option<&tree_sitter::Tree>,
+    lines: &[String],
+    cursor_row: usize,
+    prefix: &str,
+) -> Vec<CompletionItem> {
+    let mut items = Vec::new();
+    let Some(t) = tree else {
+        return items;
+    };
+
+    let mut target_impl = None;
+    find_impl_at_row(t.root_node(), cursor_row, &mut target_impl);
+
+    let mut trait_name_opt = None;
+    let mut implemented = Vec::new();
+
+    if let Some(impl_node) = target_impl {
+        if let Some(trait_node) = impl_node.child_by_field_name("trait") {
+            let trait_txt = get_node_text(trait_node, lines);
+            let clean_trait = trait_txt.split('<').next().unwrap_or(&trait_txt).trim();
+            trait_name_opt = Some(
+                clean_trait
+                    .split("::")
+                    .last()
+                    .unwrap_or(clean_trait)
+                    .trim()
+                    .to_string(),
+            );
+        }
+        if let Some(body) = impl_node.child_by_field_name("body") {
+            for i in 0..body.child_count() {
+                if let Some(child) = body.child(i)
+                    && (child.kind() == "function_item"
+                        || child.kind() == "function_signature_item")
+                    && let Some(name_node) = child.child_by_field_name("name")
+                {
+                    implemented.push(get_node_text(name_node, lines));
+                }
+            }
+        }
+    }
+
+    if trait_name_opt.is_none() {
+        for r in (0..=cursor_row.min(lines.len().saturating_sub(1))).rev() {
+            let line = lines[r].trim();
+            if line.starts_with("impl")
+                && line.contains(" for ")
+                && let Some(after_impl) = line.strip_prefix("impl")
+                && let Some(trait_part) = after_impl.split(" for ").next()
+            {
+                let clean = trait_part
+                    .trim()
+                    .split('<')
+                    .next()
+                    .unwrap_or(trait_part)
+                    .trim();
+                let t_name = clean.split("::").last().unwrap_or(clean).trim();
+                if !t_name.is_empty() {
+                    trait_name_opt = Some(t_name.to_string());
+                    break;
+                }
+            }
+        }
+    }
+
+    if let Some(trait_name) = trait_name_opt {
+        let mut trait_methods = Vec::new();
+        collect_methods_from_custom_trait(t.root_node(), lines, &trait_name, &mut trait_methods);
+
+        if trait_methods.is_empty() {
+            collect_standard_trait_methods(&trait_name, &mut trait_methods);
+        }
+
+        for (m_name, m_params, m_ret) in trait_methods {
+            if !implemented.contains(&m_name) {
+                let sig = format!("fn {m_name}{m_params}{m_ret}");
+                let body_snippet = format!("fn {m_name}{m_params}{m_ret} {{\n    $0\n}}");
+                items.push(CompletionItem {
+                    label: format!("fn {m_name}"),
+                    detail: Some(format!("implement trait method {trait_name}::{m_name}")),
+                    kind_name: "snippet".to_string(),
+                    insert_text: Some(body_snippet),
+                });
+                items.push(CompletionItem {
+                    label: m_name.clone(),
+                    detail: Some(sig),
+                    kind_name: "snippet".to_string(),
+                    insert_text: Some(format!("fn {m_name}{m_params}{m_ret} {{\n    $0\n}}")),
+                });
+            }
+        }
+    }
+
+    let p_lower = prefix.to_lowercase();
+    let mut filtered = Vec::new();
+    let mut seen = std::collections::HashSet::new();
+    for item in items {
+        if seen.insert(item.label.clone()) {
+            let l_lower = item.label.to_lowercase();
+            if p_lower.is_empty()
+                || l_lower.starts_with(&p_lower)
+                || l_lower.contains(&p_lower)
+                || is_subsequence(&p_lower, &l_lower)
+            {
+                filtered.push(item);
+            }
+        }
+    }
+    filtered
+}
+
+fn find_impl_at_row<'a>(
+    node: tree_sitter::Node<'a>,
+    row: usize,
+    result: &mut Option<tree_sitter::Node<'a>>,
+) {
+    if node.kind() == "impl_item" {
+        let start = node.start_position().row;
+        let end = node.end_position().row;
+        if row >= start && row <= end {
+            *result = Some(node);
+        }
+    }
+    for i in 0..node.child_count() {
+        if let Some(child) = node.child(i) {
+            find_impl_at_row(child, row, result);
+        }
+    }
+}
+
+fn collect_methods_from_custom_trait(
+    node: tree_sitter::Node,
+    lines: &[String],
+    trait_name: &str,
+    methods: &mut Vec<(String, String, String)>,
+) {
+    if node.kind() == "trait_item" {
+        let name_match = node
+            .child_by_field_name("name")
+            .map(|n| get_node_text(n, lines) == trait_name)
+            .unwrap_or(false);
+
+        if name_match && let Some(body) = node.child_by_field_name("body") {
+            for i in 0..body.child_count() {
+                if let Some(child) = body.child(i)
+                    && (child.kind() == "function_signature_item"
+                        || child.kind() == "function_item")
+                    && let Some(name_node) = child.child_by_field_name("name")
+                {
+                    let name = get_node_text(name_node, lines);
+                    let params = child
+                        .child_by_field_name("parameters")
+                        .map(|p| get_node_text(p, lines))
+                        .unwrap_or_else(|| "()".to_string());
+                    let ret = child
+                        .child_by_field_name("return_type")
+                        .map(|r| format!(" -> {}", get_node_text(r, lines)))
+                        .unwrap_or_default();
+                    methods.push((name, params, ret));
+                }
+            }
+        }
+    }
+    for i in 0..node.child_count() {
+        if let Some(child) = node.child(i) {
+            collect_methods_from_custom_trait(child, lines, trait_name, methods);
+        }
+    }
+}
+
+fn collect_standard_trait_methods(
+    trait_name: &str,
+    methods: &mut Vec<(String, String, String)>,
+) {
+    match trait_name {
+        "Default" => {
+            methods.push(("default".to_string(), "()".to_string(), " -> Self".to_string()));
+        }
+        "Display" => {
+            methods.push(("fmt".to_string(), "(&self, f: &mut std::fmt::Formatter<'_>)".to_string(), " -> std::fmt::Result".to_string()));
+        }
+        "Debug" => {
+            methods.push(("fmt".to_string(), "(&self, f: &mut std::fmt::Formatter<'_>)".to_string(), " -> std::fmt::Result".to_string()));
+        }
+        "Clone" => {
+            methods.push(("clone".to_string(), "(&self)".to_string(), " -> Self".to_string()));
+        }
+        "Iterator" => {
+            methods.push(("next".to_string(), "(&mut self)".to_string(), " -> Option<Self::Item>".to_string()));
+        }
+        "Into" => {
+            methods.push(("into".to_string(), "(self)".to_string(), " -> T".to_string()));
+        }
+        "From" => {
+            methods.push(("from".to_string(), "(value: T)".to_string(), " -> Self".to_string()));
+        }
+        "AsRef" => {
+            methods.push(("as_ref".to_string(), "(&self)".to_string(), " -> &T".to_string()));
+        }
+        "AsMut" => {
+            methods.push(("as_mut".to_string(), "(&mut self)".to_string(), " -> &mut T".to_string()));
+        }
+        "Deref" => {
+            methods.push(("deref".to_string(), "(&self)".to_string(), " -> &Self::Target".to_string()));
+        }
+        "DerefMut" => {
+            methods.push(("deref_mut".to_string(), "(&mut self)".to_string(), " -> &mut Self::Target".to_string()));
+        }
+        "Drop" => {
+            methods.push(("drop".to_string(), "(&mut self)".to_string(), String::new()));
+        }
+        "PartialEq" => {
+            methods.push(("eq".to_string(), "(&self, other: &Self)".to_string(), " -> bool".to_string()));
+        }
+        "PartialOrd" => {
+            methods.push(("partial_cmp".to_string(), "(&self, other: &Self)".to_string(), " -> Option<std::cmp::Ordering>".to_string()));
+        }
+        "Ord" => {
+            methods.push(("cmp".to_string(), "(&self, other: &Self)".to_string(), " -> std::cmp::Ordering".to_string()));
+        }
+        "Hash" => {
+            methods.push(("hash".to_string(), "<H: std::hash::Hasher>(&self, state: &mut H)".to_string(), String::new()));
+        }
+        "Future" => {
+            methods.push(("poll".to_string(), "(self: std::pin::Pin<&mut Self>, cx: &mut std::task::Context<'_>)".to_string(), " -> std::task::Poll<Self::Output>".to_string()));
+        }
+        "Stream" => {
+            methods.push(("poll_next".to_string(), "(self: std::pin::Pin<&mut Self>, cx: &mut std::task::Context<'_>)".to_string(), " -> std::task::Poll<Option<Self::Item>>".to_string()));
+        }
+        "Serialize" => {
+            methods.push(("serialize".to_string(), "<S>(&self, serializer: S)".to_string(), " -> Result<S::Ok, S::Error> where S: serde::Serializer".to_string()));
+        }
+        "Deserialize" => {
+            methods.push(("deserialize".to_string(), "<'de, D>(deserializer: D)".to_string(), " -> Result<Self, D::Error> where D: serde::Deserializer<'de>".to_string()));
+        }
+        _ => {}
+    }
+}
+
 fn collect_ast_scoped_symbols(
     node: tree_sitter::Node,
     lines: &[String],
@@ -1232,6 +1473,26 @@ fn find_receiver_type(
                 types.push(ident.to_string());
             }
         }
+    } else if kind == "closure_expression"
+        && let Some(params) = node.child_by_field_name("parameters")
+    {
+        for i in 0..params.child_count() {
+            if let Some(p) = params.child(i) {
+                let p_txt = get_node_text(p, lines);
+                let clean = p_txt.trim_start_matches('&').trim_start_matches("mut ").trim();
+                if clean == var_name
+                    && let Some(type_node) = p.child_by_field_name("type")
+                {
+                    let ty = get_node_text(type_node, lines);
+                    let clean_ty = ty.trim_start_matches('&').trim_start_matches("mut ").trim();
+                    let clean_ty = clean_ty.split('<').next().unwrap_or(clean_ty).trim();
+                    let ident = clean_ty.split("::").last().unwrap_or(clean_ty).trim();
+                    if !types.contains(&ident.to_string()) {
+                        types.push(ident.to_string());
+                    }
+                }
+            }
+        }
     }
 
     for i in 0..node.child_count() {
@@ -1421,6 +1682,26 @@ fn collect_ast_symbols(
                         kind_name: "variable".to_string(),
                         insert_text: Some(name),
                     });
+                }
+            }
+        }
+        "closure_expression" => {
+            if let Some(params) = node.child_by_field_name("parameters") {
+                for i in 0..params.child_count() {
+                    if let Some(p) = params.child(i) {
+                        let name = get_node_text(p, lines);
+                        let clean = name.trim_start_matches('&').trim_start_matches("mut ").trim();
+                        if !clean.is_empty()
+                            && clean.chars().all(|c| c.is_alphanumeric() || c == '_')
+                        {
+                            symbols.push(CompletionItem {
+                                label: clean.to_string(),
+                                detail: Some(format!("closure param {clean}")),
+                                kind_name: "variable".to_string(),
+                                insert_text: Some(clean.to_string()),
+                            });
+                        }
+                    }
                 }
             }
         }
@@ -1626,22 +1907,31 @@ pub fn get_auto_import_for_item(label: &str, detail: Option<&str>) -> Option<Str
 /// Fallback / curated list of standard Rust completion items (matching Helix, rust-analyzer, and all keywords)
 pub fn get_standard_rust_completions(prefix: &str) -> Vec<CompletionItem> {
     let standard_items = [
-        // Keywords
+        // Keywords with rich snippets
         ("let", "keyword", Some("keyword let"), "let"),
         ("mut", "keyword", Some("keyword mut"), "mut"),
-        ("fn", "keyword", Some("keyword fn"), "fn"),
-        ("struct", "keyword", Some("keyword struct"), "struct"),
-        ("enum", "keyword", Some("keyword enum"), "enum"),
-        ("impl", "keyword", Some("keyword impl"), "impl"),
-        ("trait", "keyword", Some("keyword trait"), "trait"),
+        ("fn", "keyword", Some("fn function_name(args) {\n    \n}"), "fn $1($2) {\n    $0\n}"),
+        ("struct", "keyword", Some("struct Template {\n    \n}"), "struct $1 {\n    $0\n}"),
+        ("enum", "keyword", Some("enum Template {\n    \n}"), "enum $1 {\n    $0\n}"),
+        ("impl", "keyword", Some("impl Type {\n    \n}"), "impl $1 {\n    $0\n}"),
+        ("trait", "keyword", Some("trait TraitName {\n    \n}"), "trait $1 {\n    $0\n}"),
+        ("match", "keyword", Some("match expr {\n    \n}"), "match $1 {\n    $0\n}"),
+        ("if", "keyword", Some("if condition {\n    \n}"), "if $1 {\n    $0\n}"),
+        ("while", "keyword", Some("while condition {\n    \n}"), "while $1 {\n    $0\n}"),
+        ("for", "keyword", Some("for item in iter {\n    \n}"), "for $1 in $2 {\n    $0\n}"),
+        ("loop", "keyword", Some("loop {\n    \n}"), "loop {\n    $0\n}"),
+        // Additional Snippets & Templates
+        ("impl trait", "snippet", Some("impl Trait for Type {\n    \n}"), "impl $1 for $2 {\n    $0\n}"),
+        ("closure", "snippet", Some("|$1| {\n    $0\n}"), "|$1| {\n    $0\n}"),
+        ("||", "snippet", Some("|$1| {\n    $0\n}"), "|$1| {\n    $0\n}"),
+        ("if let", "snippet", Some("if let Pattern = expr {\n    \n}"), "if let $1 = $2 {\n    $0\n}"),
+        ("while let", "snippet", Some("while let Pattern = expr {\n    \n}"), "while let $1 = $2 {\n    $0\n}"),
+        ("test", "snippet", Some("#[test]\nfn test_name() {\n    \n}"), "#[test]\nfn $1() {\n    $0\n}"),
+        ("mod tests", "snippet", Some("#[cfg(test)]\nmod tests {\n    \n}"), "#[cfg(test)]\nmod tests {\n    use super::*;\n\n    #[test]\n    fn $1() {\n        $0\n    }\n}"),
+        // Keywords
         ("pub", "keyword", Some("keyword pub"), "pub"),
         ("use", "keyword", Some("keyword use"), "use"),
-        ("match", "keyword", Some("keyword match"), "match"),
-        ("if", "keyword", Some("keyword if"), "if"),
         ("else", "keyword", Some("keyword else"), "else"),
-        ("while", "keyword", Some("keyword while"), "while"),
-        ("for", "keyword", Some("keyword for"), "for"),
-        ("loop", "keyword", Some("keyword loop"), "loop"),
         ("return", "keyword", Some("keyword return"), "return"),
         ("async", "keyword", Some("keyword async"), "async"),
         ("await", "keyword", Some("keyword await"), "await"),
