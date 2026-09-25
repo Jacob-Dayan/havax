@@ -5,7 +5,7 @@
 ![Theme](https://img.shields.io/badge/theme-One%20Half%20Dark-c678dd?style=flat-square)
 ![Parser](https://img.shields.io/badge/parser-Tree--sitter-61afef?style=flat-square)
 ![Edition](https://img.shields.io/badge/rust-2024%20edition-fab387?style=flat-square)
-![License](https://img.shields.io/badge/license-MIT%2FApache--2.0-blue?style=flat-square)
+![License](https://img.shields.io/badge/license-MPL--2.0-blue?style=flat-square)
 
 ---
 
@@ -348,8 +348,13 @@ All 37 unit tests verify:
 * Insert mode completion navigation keybindings (`Down`, `Up`, `Tab`, `Enter`, `Esc`).
 * Clap CLI parsing, TOML configuration deserialization, and multi-buffer operations.
 * Tree-sitter Rust AST parsing and syntax highlighting.
-* Visual mode selection motions (`vgl`), word motions and backward deletion across platforms.
 
+---
+
+## 📜 License
+
+This project is licensed under the **Mozilla Public License Version 2.0 (MPL-2.0)**. See the [LICENSE](file:///wsl.localhost/Ubuntu/home/shahar/codes/rust/havax/LICENSE) file for the full license text.
 
 > *Note*: I have no shit to make a full damm editor so I use antigravity to vibecode this app.
+
 
