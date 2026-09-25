@@ -47,7 +47,7 @@ impl Editor {
         match output {
             Ok(out) => {
                 if out.status.success() {
-                    self.set_status("✓ cargo check: passed", false);
+                    self.set_status("cargo check: passed", false);
                 } else {
                     let stderr = String::from_utf8_lossy(&out.stderr);
                     let stdout = String::from_utf8_lossy(&out.stdout);
@@ -61,7 +61,7 @@ impl Editor {
                         .unwrap_or("errors occurred");
 
                     self.set_status(
-                        &format!("✗ {error_count} err, {warning_count} warn | {first_msg}"),
+                        &format!("{error_count} err, {warning_count} warn | {first_msg}"),
                         true,
                     );
                 }
@@ -108,7 +108,7 @@ impl Editor {
                     buf.clamp_cursor();
                     buf.anchor = buf.cursor;
                     buf.modified = true;
-                    self.set_status("✓ Buffer formatted with rustfmt", false);
+                    self.set_status("Buffer formatted with rustfmt", false);
                 } else {
                     let err = String::from_utf8_lossy(&out.stderr);
                     let first_line = err.lines().next().unwrap_or("syntax error");
@@ -158,8 +158,6 @@ impl Editor {
         self.init()?;
         Ok(())
     }
-
-    // --- Command Mode Execution ---
 
     pub fn execute_command(&mut self) -> Result<bool, Box<dyn Error>> {
         let cmd = self.command_buffer.trim().to_string();

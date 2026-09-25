@@ -1,4 +1,4 @@
-# 🦀 havax
+# havax
 
 **Havax** is a modal, terminal-based text editor inspired by **[Helix](https://helix-editor.com/)**, tailored specifically for **Rust development**. It features true Tree-sitter syntax parsing, automatic grammar installation and building, Clap CLI argument parsing, and Helix-compatible TOML configuration.
 
@@ -9,7 +9,7 @@
 
 ---
 
-## 🚀 CLI Usage & Arguments (Powered by Clap)
+## CLI Usage & Arguments (Powered by Clap)
 
 ```bash
 havax [OPTIONS] [FILES]... [COMMAND]
@@ -31,7 +31,7 @@ havax [OPTIONS] [FILES]... [COMMAND]
 
 ---
 
-## 🎨 Helix Custom Themes & Inheritance
+## Helix Custom Themes & Inheritance
 
 Like Helix, **havax** supports custom theme files located in `~/.config/havax/themes/<name>.toml`, `~/.config/helix/themes/<name>.toml`, or `.helix/themes/<name>.toml`. Themes support inheritance via `inherits` and direct UI element overrides:
 
@@ -48,7 +48,7 @@ theme = "best-i-could-make"
 
 ---
 
-## 🌳 Tree-Sitter Integration & Automatic First Startup
+## Tree-Sitter Integration & Automatic First Startup
 
 Like Helix, **havax** uses actual Tree-sitter AST parsing for syntax highlighting and language awareness:
 * **First Startup Auto-Installation**: On first launch, havax automatically fetches and compiles the Tree-sitter grammars into shared libraries (`rust.so`, `toml.so`) located in `~/.config/havax/runtime/grammars/`.
@@ -57,7 +57,7 @@ Like Helix, **havax** uses actual Tree-sitter AST parsing for syntax highlightin
 
 ---
 
-## ⚙️ TOML Configuration (Helix Compatible)
+## TOML Configuration (Helix Compatible)
 
 Configuration is located at `~/.config/havax/config.toml` (or specified via `--config`):
 
@@ -92,9 +92,9 @@ hidden = false
 
 ---
 
-## ✨ Features
+## Features
 
-### 📂 Directory Opening & Interactive File Picker (Helix-Style)
+### Directory Opening & Interactive File Picker (Helix-Style)
 * **Open All Directory Files (`-a`)**: `havax -a .` opens every file in the project into buffers and automatically activates `main.rs` (or `main.*`) as the primary buffer.
 * **Launch on Directory**: `havax .` or `havax path/to/dir` launches an interactive floating modal.
 * **Open from Command Mode**: `:o .` or `:o path/to/dir`.
@@ -110,7 +110,7 @@ hidden = false
 
 ---
 
-### 🎯 Full Helix-Style Selection-First Motions
+### Full Helix-Style Selection-First Motions
 * **Word Motions that Mark/Select (`w`, `b`, `e`)**:
   * `w` moves to the next word start and marks the traversed text as a selection. Enables immediate actions like **`wd`** (delete word), **`wc`** (change word), **`wy`** (yank word).
   * `b` moves backward by word start, selecting the previous word (**`bd`**, **`bc`**, etc.).
@@ -134,7 +134,7 @@ hidden = false
 
 ---
 
-### 📑 Multi-Buffer Management
+### Multi-Buffer Management
 Switch seamlessly between multiple files during Rust development with a top tab bar:
 * **Top Buffer Bar**: Displays open buffers (e.g. ` 1: main.rs [+]   2: Cargo.toml `) with active buffer badges and modified indicators.
 * **`:o <file>` / `:open <file>`**: Opens a file in a new buffer (or opens the directory picker if given a folder).
@@ -147,7 +147,7 @@ Switch seamlessly between multiple files during Rust development with a top tab 
 
 ---
 
-### 💻 Integrated Rust Tools & Shell Execution
+### Integrated Rust Tools & Shell Execution
 * **`:check`**: Runs `cargo check` and streams results directly into the statusline.
 * **`:fmt`**: Auto-formats code with `rustfmt` while preserving cursor position.
 * **`:run`**: Runs `cargo run`.
@@ -156,7 +156,7 @@ Switch seamlessly between multiple files during Rust development with a top tab 
 
 ---
 
-## ⌨️ Complete Keybindings Cheat Sheet
+## Complete Keybindings Cheat Sheet
 
 ### Normal Mode (` NOR `)
 
@@ -246,7 +246,7 @@ Pressing `m` opens the Helix-style floating Match overlay:
 
 ---
 
-### 🌈 Rich Scoped Syntax Highlighting & Rainbow Brackets
+### Rich Scoped Syntax Highlighting & Rainbow Brackets
 
 * **Scoped Path Patterns**: Highlighting detects module prefixes in scoped paths (e.g. `module::func`, `std::collections::HashMap`, `io::stdout()`), styling module paths in **yellow / italic** (`COLOR_MODULE` / `theme.r#type`) and function / method calls in **blue** (`COLOR_FN` / `theme.function`).
 * **Method Invocation**: Method calls such as `reader.read_line()` or `object.method()` highlight the method name in blue.
@@ -254,7 +254,7 @@ Pressing `m` opens the Helix-style floating Match overlay:
 
 ---
 
-### ⌫ Word Deletion (Cross-Platform)
+### Word Deletion (Cross-Platform)
 
 Automatically catches `Ctrl+Backspace` on Windows and `Alt+Backspace` / `Ctrl+W` on Unix/Linux/WSL across all modes:
 * **Insert Mode**: Deletes the previous word backward (including trailing whitespace and symbol boundaries).
@@ -308,7 +308,7 @@ Automatically catches `Ctrl+Backspace` on Windows and `Alt+Backspace` / `Ctrl+W`
 | `:test` / `:t` | Run `cargo test` in the project |
 | `:help` / `:h` | Display command reference |
 
-### 🦀 Rust-Analyzer & Language Server Protocol (LSP)
+### Rust-Analyzer & Language Server Protocol (LSP)
 
 **havax** integrates natively with `rust-analyzer` to provide an IDE-grade Rust development experience matching the Helix visual aesthetics:
 
@@ -332,7 +332,7 @@ Automatically catches `Ctrl+Backspace` on Windows and `Alt+Backspace` / `Ctrl+W`
 
 ---
 
-## 🧪 Testing
+## Testing
 
 ```bash
 cargo test
@@ -351,7 +351,7 @@ All 37 unit tests verify:
 
 ---
 
-## 📜 License
+## License
 
 This project is licensed under the **Mozilla Public License Version 2.0 (MPL-2.0)**. See the [LICENSE](file:///wsl.localhost/Ubuntu/home/shahar/codes/rust/havax/LICENSE) file for the full license text.
 

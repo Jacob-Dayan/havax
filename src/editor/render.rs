@@ -52,7 +52,6 @@ impl Editor {
 
         execute!(self.stdout, cursor::Hide)?;
 
-        // --- Render Buffer Tab Bar (Row 0) if enabled ---
         if show_tab_bar {
             execute!(self.stdout, cursor::MoveTo(0, 0))?;
             let mut tab_x = 0;
@@ -94,7 +93,6 @@ impl Editor {
             }
         }
 
-        // --- Render Editor Content ---
         let current_buf = &mut self.buffers[self.current_buffer];
         if current_buf.needs_reparse || current_buf.tree.is_none() {
             current_buf.reparse();
@@ -283,7 +281,6 @@ impl Editor {
             }
         }
 
-        // --- Render Statusline / Command Bar (Row rows - 1) ---
         let status_row = rows.saturating_sub(1);
         execute!(self.stdout, cursor::MoveTo(0, status_row))?;
 
@@ -371,12 +368,8 @@ impl Editor {
                 cur_buf.cursor.col + 1
             );
 
-            let msg_info = if let Some((msg, is_err)) = &self.status_message {
-                if *is_err {
-                    format!(" | ✗ {msg}")
-                } else {
-                    format!(" | {msg}")
-                }
+            let msg_info = if let Some((msg, _)) = &self.status_message {
+                format!(" | {msg}")
             } else {
                 String::new()
             };
@@ -398,7 +391,6 @@ impl Editor {
             )?;
         }
 
-        // --- Render Completion Menu Overlay if active ---
         if self.completion.visible && !self.completion.items.is_empty() {
             let cur_buf = &self.buffers[self.current_buffer];
             let trigger_screen_x = gutter_width
@@ -418,7 +410,6 @@ impl Editor {
             )?;
         }
 
-        // --- Render Helix Match Menu Overlay if active ---
         if self.mode == Mode::Match && self.match_state == crate::types::MatchState::Menu {
             let cur_buf = &self.buffers[self.current_buffer];
             let cur_screen_x = gutter_width + cur_buf.cursor.col.saturating_sub(cur_buf.scroll_col);
@@ -434,7 +425,6 @@ impl Editor {
             )?;
         }
 
-        // --- Render Helix Goto Menu Overlay if active ---
         if self.mode == Mode::Goto {
             let cur_buf = &self.buffers[self.current_buffer];
             let cur_screen_x = gutter_width + cur_buf.cursor.col.saturating_sub(cur_buf.scroll_col);
@@ -450,12 +440,10 @@ impl Editor {
             )?;
         }
 
-        // --- Render Helix Directory / File Picker Overlay if active ---
         if let Some(picker) = &self.file_picker {
             Self::render_file_picker(&mut self.stdout, &self.theme, picker, cols, rows)?;
         }
 
-        // --- Render Command Completion Overlay in Command Mode ---
         if self.mode == Mode::Command {
             // Use the original prefix when cycling, otherwise the current buffer
             let query = self

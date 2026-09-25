@@ -504,8 +504,6 @@ impl Buffer {
         all_commented
     }
 
-    // --- Helix Word Motions (Selects the traversed word on every click) ---
-
     pub fn move_next_word_start(&mut self) {
         self.move_next_word_start_ext(false);
     }
@@ -635,8 +633,6 @@ impl Buffer {
             col: (col + 1).min(line_chars.len()),
         };
     }
-
-    // --- Insert Operations ---
 
     pub fn insert_char(&mut self, c: char) {
         self.insert_char_auto_pair(c, false);
@@ -880,8 +876,6 @@ impl Buffer {
         self.needs_reparse = true;
     }
 
-    // --- Standard Cursor Motions ---
-
     pub fn move_left(&mut self) {
         self.move_cursor_left(false);
     }
@@ -958,8 +952,6 @@ impl Buffer {
             self.scroll_col = self.cursor.col - content_cols + 1;
         }
     }
-
-    // --- Helix Match & Surround Operations ---
 
     pub fn find_matching_bracket(&self, pos: Position) -> Option<Position> {
         if pos.row >= self.lines.len() {

@@ -32,8 +32,6 @@ pub fn is_delete_word_backward(code: KeyCode, modifiers: KeyModifiers) -> bool {
 }
 
 impl Editor {
-    // --- Key Handler ---
-
     pub fn handle_key(
         &mut self,
         code: KeyCode,

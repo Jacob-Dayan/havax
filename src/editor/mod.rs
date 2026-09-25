@@ -671,8 +671,6 @@ impl Editor {
         }
     }
 
-    // --- Buffer Management Operations ---
-
     pub fn open_buffer(&mut self, path: PathBuf) -> Result<(), Box<dyn Error>> {
         if path.is_dir() {
             self.file_picker = Some(FilePicker::with_hidden(
