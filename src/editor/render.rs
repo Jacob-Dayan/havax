@@ -39,7 +39,7 @@ impl Editor {
         let shape = match self.mode {
             Mode::Insert => self.config.editor.cursor_shape.insert,
             Mode::Normal => self.config.editor.cursor_shape.normal,
-            Mode::Visual | Mode::Goto | Mode::Match | Mode::Command => {
+            Mode::Visual | Mode::Goto | Mode::Match | Mode::Command | Mode::Leader => {
                 self.config.editor.cursor_shape.select
             }
         };
@@ -316,6 +316,7 @@ impl Editor {
                 Mode::Visual => (self.theme.badge_goto_bg, " SEL "),
                 Mode::Goto => (self.theme.badge_goto_bg, " GOTO "),
                 Mode::Match => (self.theme.badge_goto_bg, " MATCH "),
+                Mode::Leader => (self.theme.badge_cmd_bg, " SPACE "),
                 Mode::Command => unreachable!(),
             };
 

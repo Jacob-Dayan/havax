@@ -1,5 +1,6 @@
 //! Integration tests for the havax editor
 
+use crossterm::event::{KeyCode, KeyModifiers};
 use havax::buffer::Buffer;
 use havax::config::{self, Config, EditorConfig};
 use havax::editor::{self, Editor};
@@ -3049,5 +3050,98 @@ fn test_scoped_double_colon_dynamic_ast_and_lsp_autocompletion() {
     assert!(labels.contains(&"bind"));
     assert!(labels.contains(&"DEFAULT_PORT"));
 }
+
+#[test]
+fn test_helix_leader_mode_and_actions() {
+    let temp_dir = std::env::temp_dir().join(format!("havax_test_leader_{}", std::process::id()));
+    let _ = std::fs::create_dir_all(&temp_dir);
+    let test_file = temp_dir.join("test_leader.txt");
+    std::fs::write(&test_file, "hello world\n").unwrap();
+
+    let buf1 = Buffer::new(test_file.clone()).unwrap();
+    let buf2 = Buffer::new(temp_dir.join("test_leader_2.txt")).unwrap();
+
+    let mut editor = Editor {
+        buffers: vec![buf1, buf2],
+        current_buffer: 0,
+        mode: Mode::Normal,
+        goto_return_mode: Mode::Normal,
+        match_return_mode: Mode::Normal,
+        match_state: MatchState::Menu,
+        clipboard: String::new(),
+        command_buffer: String::new(),
+        command_prefix: None,
+        command_completion_idx: 0,
+        status_message: None,
+        file_picker: None,
+        stdout: std::io::stdout(),
+        config: Config {
+            theme: "one-half-dark".to_string(),
+            editor: EditorConfig::default(),
+        },
+        config_path: None,
+        theme: Theme::default(),
+        lsp: None,
+        toml_lsp: None,
+        completion: havax::completion::CompletionMenu::new(),
+        lsp_doc_version: 1,
+        prev_buffer_idx: 0,
+        active_completion_req: 0,
+        pending_c: false,
+    };
+
+    let _ = editor.handle_key(KeyCode::Char(' '), KeyModifiers::NONE);
+    assert_eq!(editor.mode, Mode::Leader);
+    assert!(editor.file_picker.is_none());
+
+    let _ = editor.handle_key(KeyCode::Char('f'), KeyModifiers::NONE);
+    assert_eq!(editor.mode, Mode::Normal);
+    assert!(editor.file_picker.is_some());
+    editor.file_picker = None;
+
+    let _ = editor.handle_key(KeyCode::Char(' '), KeyModifiers::NONE);
+    assert_eq!(editor.mode, Mode::Leader);
+    let _ = editor.handle_key(KeyCode::Char('b'), KeyModifiers::NONE);
+    assert_eq!(editor.mode, Mode::Normal);
+    assert_eq!(editor.current_buffer, 1);
+
+    let _ = editor.handle_key(KeyCode::Char(' '), KeyModifiers::NONE);
+    assert_eq!(editor.mode, Mode::Leader);
+    let _ = editor.handle_key(KeyCode::Esc, KeyModifiers::NONE);
+    assert_eq!(editor.mode, Mode::Normal);
+
+    let _ = editor.handle_key(KeyCode::Char(' '), KeyModifiers::NONE);
+    assert_eq!(editor.mode, Mode::Leader);
+    let _ = editor.handle_key(KeyCode::Char('z'), KeyModifiers::NONE);
+    assert_eq!(editor.mode, Mode::Normal);
+
+    editor.current_buffer = 0;
+    editor.buf_mut().modified = true;
+    let _ = editor.handle_key(KeyCode::Char(' '), KeyModifiers::NONE);
+    assert_eq!(editor.mode, Mode::Leader);
+    let res = editor.handle_key(KeyCode::Char('w'), KeyModifiers::NONE);
+    assert!(res.is_ok());
+    assert_eq!(editor.mode, Mode::Normal);
+    assert!(!editor.buf().modified);
+
+    editor.buf_mut().modified = true;
+    let _ = editor.handle_key(KeyCode::Char(' '), KeyModifiers::NONE);
+    assert_eq!(editor.mode, Mode::Leader);
+    let res = editor.handle_key(KeyCode::Char('q'), KeyModifiers::NONE);
+    assert!(res.is_ok());
+    assert_eq!(res.unwrap(), true);
+    assert_eq!(editor.mode, Mode::Normal);
+    assert!(editor.status_message.is_some());
+
+    editor.buf_mut().modified = false;
+    let _ = editor.handle_key(KeyCode::Char(' '), KeyModifiers::NONE);
+    assert_eq!(editor.mode, Mode::Leader);
+    let res = editor.handle_key(KeyCode::Char('q'), KeyModifiers::NONE);
+    assert!(res.is_ok());
+    assert_eq!(res.unwrap(), false);
+
+    let _ = std::fs::remove_dir_all(&temp_dir);
+}
+
 
 

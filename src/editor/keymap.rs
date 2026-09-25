@@ -232,9 +232,8 @@ impl Editor {
 
         match self.mode {
             Mode::Normal => match (code, modifiers) {
-                // Helix Space-f file picker
                 (KeyCode::Char(' '), KeyModifiers::NONE) => {
-                    self.file_picker = Some(FilePicker::new(PathBuf::from(".")));
+                    self.mode = Mode::Leader;
                 }
 
                 // Visual mode entry
@@ -856,6 +855,40 @@ impl Editor {
                             self.mode = return_mode;
                         }
                     },
+                }
+            }
+
+            Mode::Leader => {
+                match code {
+                    KeyCode::Char('f') => {
+                        self.file_picker = Some(FilePicker::with_hidden(
+                            PathBuf::from("."),
+                            self.config.editor.file_picker.hidden,
+                        ));
+                        self.mode = Mode::Normal;
+                    }
+                    KeyCode::Char('w') => {
+                        self.save_current()?;
+                        self.mode = Mode::Normal;
+                    }
+                    KeyCode::Char('q') => {
+                        if self.buf().modified {
+                            self.set_status("Unsaved changes! Use :q! to quit.", true);
+                            self.mode = Mode::Normal;
+                        } else {
+                            return Ok(false);
+                        }
+                    }
+                    KeyCode::Char('b') => {
+                        self.next_buffer();
+                        self.mode = Mode::Normal;
+                    }
+                    KeyCode::Esc => {
+                        self.mode = Mode::Normal;
+                    }
+                    _ => {
+                        self.mode = Mode::Normal;
+                    }
                 }
             }
 

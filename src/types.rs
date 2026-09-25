@@ -12,6 +12,7 @@ pub enum Mode {
     Goto,
     Visual,
     Match,
+    Leader,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
