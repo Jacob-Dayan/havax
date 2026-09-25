@@ -1552,6 +1552,68 @@ fn collect_ast_scoped_symbols(
                 }
             }
         }
+        "trait_item" => {
+            let trait_match = node.child_by_field_name("name").map(|n| {
+                get_node_text(n, lines) == scope
+            }).unwrap_or(false);
+
+            if trait_match
+                && let Some(body) = node.child_by_field_name("body")
+            {
+                for i in 0..body.child_count() {
+                    if let Some(child) = body.child(i)
+                        && (child.kind() == "function_item" || child.kind() == "function_signature_item")
+                        && let Some(name_node) = child.child_by_field_name("name")
+                    {
+                        let name = get_node_text(name_node, lines);
+                        let params = child
+                            .child_by_field_name("parameters")
+                            .map(|p| get_node_text(p, lines))
+                            .unwrap_or_default();
+                        let ret = child
+                            .child_by_field_name("return_type")
+                            .map(|r| format!(" -> {}", get_node_text(r, lines)))
+                            .unwrap_or_default();
+                        let is_method = params.contains("self");
+                        symbols.push(CompletionItem {
+                            label: name.clone(),
+                            detail: Some(format!("fn {name}{params}{ret}")),
+                            kind_name: if is_method { "method" } else { "function" }.to_string(),
+                            insert_text: Some(if params.trim() == "()" || params.trim() == "(&self)" || params.trim() == "(&mut self)" || params.trim() == "(self)" {
+                                format!("{name}()")
+                            } else {
+                                format!("{name}($0)")
+                            }),
+                        });
+                    }
+                }
+            }
+        }
+        "struct_item" => {
+            let struct_match = node.child_by_field_name("name").map(|n| {
+                get_node_text(n, lines) == scope
+            }).unwrap_or(false);
+
+            if struct_match
+                && let Some(body) = node.child_by_field_name("body")
+            {
+                for i in 0..body.child_count() {
+                    if let Some(field) = body.child(i)
+                        && field.kind() == "field_declaration"
+                        && let Some(fname) = field.child_by_field_name("name")
+                    {
+                        let name = get_node_text(fname, lines);
+                        let ftype = field.child_by_field_name("type").map(|t| get_node_text(t, lines)).unwrap_or_default();
+                        symbols.push(CompletionItem {
+                            label: name.clone(),
+                            detail: Some(format!("{name}: {ftype}")),
+                            kind_name: "field".to_string(),
+                            insert_text: Some(name),
+                        });
+                    }
+                }
+            }
+        }
         "mod_item" => {
             let mod_match = node.child_by_field_name("name").map(|n| {
                 get_node_text(n, lines) == scope
@@ -1573,6 +1635,167 @@ fn collect_ast_scoped_symbols(
     for i in 0..node.child_count() {
         if let Some(child) = node.child(i) {
             collect_ast_scoped_symbols(child, lines, scope, symbols);
+        }
+    }
+}
+
+/// Dynamically extracts method completions from Tree-sitter for a receiver expression
+pub fn extract_tree_sitter_methods(
+    tree: Option<&tree_sitter::Tree>,
+    lines: &[String],
+    receiver: &str,
+    prefix: &str,
+) -> Vec<CompletionItem> {
+    let mut symbols = Vec::new();
+    let clean_receiver = receiver.trim().trim_start_matches('&').trim_start_matches('*');
+
+    if let Some(t) = tree {
+        let mut deduced_types = Vec::new();
+        if clean_receiver == "self" {
+            collect_all_impl_types(t.root_node(), lines, &mut deduced_types);
+        } else {
+            find_receiver_type(t.root_node(), lines, clean_receiver, &mut deduced_types);
+        }
+
+        for ty in &deduced_types {
+            collect_ast_scoped_symbols(t.root_node(), lines, ty, &mut symbols);
+        }
+
+        collect_all_impl_methods(t.root_node(), lines, &mut symbols);
+    }
+
+    let p_lower = prefix.to_lowercase();
+    let mut filtered = Vec::new();
+    let mut seen = std::collections::HashSet::new();
+
+    for item in symbols {
+        if (item.kind_name == "method" || item.kind_name == "field")
+            && seen.insert(item.label.clone())
+        {
+            let l_lower = item.label.to_lowercase();
+            if p_lower.is_empty()
+                || l_lower.starts_with(&p_lower)
+                || l_lower.contains(&p_lower)
+                || is_subsequence(&p_lower, &l_lower)
+            {
+                filtered.push(item);
+            }
+        }
+    }
+
+    filtered
+}
+
+fn find_receiver_type(node: tree_sitter::Node, lines: &[String], var_name: &str, types: &mut Vec<String>) {
+    let kind = node.kind();
+    if kind == "let_declaration" {
+        let pat_matches = node.child_by_field_name("pattern").map(|p| {
+            let txt = get_node_text(p, lines);
+            txt.split_whitespace().any(|w| w == var_name || w == format!("mut {var_name}"))
+        }).unwrap_or(false);
+
+        if pat_matches {
+            if let Some(type_node) = node.child_by_field_name("type") {
+                let ty = get_node_text(type_node, lines);
+                let clean = ty.split('<').next().unwrap_or(&ty).trim();
+                let ident = clean.split("::").last().unwrap_or(clean).trim();
+                if !types.contains(&ident.to_string()) {
+                    types.push(ident.to_string());
+                }
+            } else if let Some(val_node) = node.child_by_field_name("value") {
+                let val_txt = get_node_text(val_node, lines);
+                if let Some(colons) = val_txt.find("::") {
+                    let ty = val_txt[..colons].trim();
+                    let ident = ty.split("::").last().unwrap_or(ty).trim();
+                    if !types.contains(&ident.to_string()) {
+                        types.push(ident.to_string());
+                    }
+                } else if val_txt.starts_with("vec!")
+                    && !types.contains(&"Vec".to_string()) {
+                    types.push("Vec".to_string());
+                } else if val_txt.starts_with('"')
+                    && !types.contains(&"String".to_string()) {
+                    types.push("String".to_string());
+                }
+            }
+        }
+    } else if kind == "parameter" {
+        let pat_matches = node.child_by_field_name("pattern").map(|p| {
+            get_node_text(p, lines) == var_name
+        }).unwrap_or(false);
+
+        if pat_matches && let Some(type_node) = node.child_by_field_name("type") {
+            let ty = get_node_text(type_node, lines);
+            let clean = ty.trim_start_matches('&').trim_start_matches("mut ").trim();
+            let clean = clean.split('<').next().unwrap_or(clean).trim();
+            let ident = clean.split("::").last().unwrap_or(clean).trim();
+            if !types.contains(&ident.to_string()) {
+                types.push(ident.to_string());
+            }
+        }
+    }
+
+    for i in 0..node.child_count() {
+        if let Some(child) = node.child(i) {
+            find_receiver_type(child, lines, var_name, types);
+        }
+    }
+}
+
+fn collect_all_impl_types(node: tree_sitter::Node, lines: &[String], types: &mut Vec<String>) {
+    if node.kind() == "impl_item"
+        && let Some(t) = node.child_by_field_name("type")
+    {
+        let txt = get_node_text(t, lines);
+        let ident = txt.split('<').next().unwrap_or(&txt).trim();
+        let ident = ident.split("::").last().unwrap_or(ident).trim();
+        if !types.contains(&ident.to_string()) {
+            types.push(ident.to_string());
+        }
+    }
+    for i in 0..node.child_count() {
+        if let Some(child) = node.child(i) {
+            collect_all_impl_types(child, lines, types);
+        }
+    }
+}
+
+fn collect_all_impl_methods(node: tree_sitter::Node, lines: &[String], symbols: &mut Vec<CompletionItem>) {
+    if node.kind() == "impl_item"
+        && let Some(body) = node.child_by_field_name("body")
+    {
+        for i in 0..body.child_count() {
+            if let Some(child) = body.child(i)
+                && child.kind() == "function_item"
+                && let Some(name_node) = child.child_by_field_name("name")
+            {
+                let params = child
+                    .child_by_field_name("parameters")
+                    .map(|p| get_node_text(p, lines))
+                    .unwrap_or_default();
+                if params.contains("self") {
+                    let name = get_node_text(name_node, lines);
+                    let ret = child
+                        .child_by_field_name("return_type")
+                        .map(|r| format!(" -> {}", get_node_text(r, lines)))
+                        .unwrap_or_default();
+                    symbols.push(CompletionItem {
+                        label: name.clone(),
+                        detail: Some(format!("fn {name}{params}{ret}")),
+                        kind_name: "method".to_string(),
+                        insert_text: Some(if params.trim() == "(&self)" || params.trim() == "(&mut self)" || params.trim() == "(self)" {
+                            format!("{name}()")
+                        } else {
+                            format!("{name}($0)")
+                        }),
+                    });
+                }
+            }
+        }
+    }
+    for i in 0..node.child_count() {
+        if let Some(child) = node.child(i) {
+            collect_all_impl_methods(child, lines, symbols);
         }
     }
 }

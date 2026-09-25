@@ -1,1 +1,0 @@
-//! Test suits for the `havax` editor

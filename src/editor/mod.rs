@@ -388,14 +388,13 @@ impl Editor {
             }
             (f_start, f_prefix, scoped_items)
         } else if let Some((receiver, f_start, f_prefix)) = dot_call {
-            let mut method_items = crate::lsp::get_method_completions(&receiver, &f_prefix);
-            let ast_methods = crate::lsp::extract_tree_sitter_scoped_symbols(
+            let mut method_items = crate::lsp::extract_tree_sitter_methods(
                 buf.tree.as_ref(),
                 &buf.lines,
                 &receiver,
                 &f_prefix,
             );
-            for item in ast_methods {
+            for item in crate::lsp::get_method_completions(&receiver, &f_prefix) {
                 if !method_items.iter().any(|it| it.label == item.label) {
                     method_items.push(item);
                 }

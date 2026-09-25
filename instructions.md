@@ -296,6 +296,11 @@ hidden = false
 - **Idle / Whitespace Inline Suggestion Suppression**: Fixed completion triggers so that when cursor is on whitespace or an empty line without an active word prefix or trigger character (`::`, `.`), the completion menu is explicitly closed and suppressed, preventing random keyword completions (`async`, `const`, etc.) from showing up while idle.
 - **Helix-Aligned LSP Capabilities**: Enhanced LSP client handshake with `workspaceFolders` and complete client capabilities matching Helix, allowing seamless `textDocument/definition`, `completion` context with `triggerCharacter`, and asynchronous request tracking (`active_completion_req`).
 
+### Phase 19 — Integration Test Suite & Dynamic AST Type Reflection
+- **Dedicated Integration Test Suite**: Split the crate into a library (`src/lib.rs`) and binary (`src/main.rs`), moving the entire test suite from `src/main.rs` into [`tests/integration_tests.rs`](file:///tests/integration_tests.rs).
+- **Dynamic Tree-Sitter & rust-analyzer AST Extraction**: Extended Tree-Sitter AST inspection (`extract_tree_sitter_symbols`, `extract_tree_sitter_scoped_symbols`, `extract_tree_sitter_methods`) to dynamically extract methods, functions, fields, enum variants, and trait implementations for all user-defined structs, enums, traits, and modules in addition to standard library types.
+- **Local Variable Type Deductions**: Analyzes local variable declarations (`let`, function parameters, `self`) to resolve receiver types and dynamically suggest matching `impl` methods on dot `.` expressions.
+
 ---
 
 ## Testing
@@ -304,7 +309,7 @@ hidden = false
 cargo test
 ```
 
-50 tests covering:
+51 integration tests covering:
 - CLI argument parsing and `-a` directory scanning
 - TOML configuration deserialization & Havax config path resolution
 - All command-mode commands (`:new`, `:w`, `:wa`, `:pwd`, `:cd`, `:set-language`, `:config-open`, `:config-reload`)
@@ -314,11 +319,12 @@ cargo test
 - Match mode (brackets, surround, select around/inside)
 - Helix Goto table popup overlay and all goto actions (`gs`, `gh`, `gl`, `gg`, `ge`, `ga`, `gm`, `g.`, `gd`, `gf`, `gn`, `gp`)
 - Idle / whitespace completion suppression (no unwanted popups on idle)
+- Dynamic Tree-Sitter custom struct, enum, and method AST completions
 - Tree-sitter syntax highlighting accuracy (Rust and TOML)
 - LSP diagnostics and completion triggering (Rust and TOML)
 - Real-time background LSP diagnostic & completion reactivity
-- Scoped module and type completions (`String::`, `std::fs::`, `std::io::`, `Vec::`)
-- Dot-operator method completions (`s.`, `path.`, `vec.`)
+- Scoped module and type completions (`String::`, `std::fs::`, `std::io::`, `Vec::`, custom structs/enums)
+- Dot-operator method completions (`s.`, `path.`, `vec.`, `user.`)
 - AST-derived `impl` associated functions and `enum` variant completions
 - Command-mode Tab/BackTab cycling and expanded write aliases
 - Theme inheritance and custom overrides
