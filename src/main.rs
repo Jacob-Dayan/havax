@@ -318,6 +318,8 @@ mod tests {
             toml_lsp: None,
             completion: crate::completion::CompletionMenu::new(),
             lsp_doc_version: 1,
+            prev_buffer_idx: 0,
+            active_completion_req: 0,
             pending_c: false,
         };
 
@@ -463,6 +465,8 @@ hidden = false
             toml_lsp: None,
             completion: crate::completion::CompletionMenu::new(),
             lsp_doc_version: 1,
+            prev_buffer_idx: 0,
+            active_completion_req: 0,
             pending_c: false,
         };
 
@@ -522,6 +526,8 @@ hidden = false
             toml_lsp: None,
             completion: crate::completion::CompletionMenu::new(),
             lsp_doc_version: 1,
+            prev_buffer_idx: 0,
+            active_completion_req: 0,
             pending_c: false,
         };
 
@@ -680,6 +686,8 @@ hidden = false
             toml_lsp: None,
             completion: crate::completion::CompletionMenu::new(),
             lsp_doc_version: 1,
+            prev_buffer_idx: 0,
+            active_completion_req: 0,
             pending_c: false,
         };
 
@@ -805,6 +813,8 @@ hidden = false
             toml_lsp: None,
             completion: crate::completion::CompletionMenu::new(),
             lsp_doc_version: 1,
+            prev_buffer_idx: 0,
+            active_completion_req: 0,
             pending_c: false,
         };
 
@@ -848,6 +858,8 @@ hidden = false
             toml_lsp: None,
             completion: crate::completion::CompletionMenu::new(),
             lsp_doc_version: 1,
+            prev_buffer_idx: 0,
+            active_completion_req: 0,
             pending_c: false,
         };
 
@@ -932,6 +944,8 @@ hidden = false
             toml_lsp: None,
             completion: crate::completion::CompletionMenu::new(),
             lsp_doc_version: 1,
+            prev_buffer_idx: 0,
+            active_completion_req: 0,
             pending_c: false,
         };
 
@@ -981,6 +995,8 @@ hidden = false
             toml_lsp: None,
             completion: crate::completion::CompletionMenu::new(),
             lsp_doc_version: 1,
+            prev_buffer_idx: 0,
+            active_completion_req: 0,
             pending_c: false,
         };
 
@@ -1028,6 +1044,8 @@ hidden = false
             toml_lsp: None,
             completion: crate::completion::CompletionMenu::new(),
             lsp_doc_version: 1,
+            prev_buffer_idx: 0,
+            active_completion_req: 0,
             pending_c: false,
         };
 
@@ -1114,6 +1132,8 @@ inherits = "catppuccin_mocha"
             toml_lsp: None,
             completion: crate::completion::CompletionMenu::new(),
             lsp_doc_version: 1,
+            prev_buffer_idx: 0,
+            active_completion_req: 0,
             pending_c: false,
         };
 
@@ -1273,6 +1293,8 @@ inherits = "catppuccin_mocha"
             toml_lsp: None,
             completion: crate::completion::CompletionMenu::new(),
             lsp_doc_version: 1,
+            prev_buffer_idx: 0,
+            active_completion_req: 0,
             pending_c: false,
         };
 
@@ -1333,6 +1355,8 @@ inherits = "catppuccin_mocha"
             toml_lsp: None,
             completion: crate::completion::CompletionMenu::new(),
             lsp_doc_version: 1,
+            prev_buffer_idx: 0,
+            active_completion_req: 0,
             pending_c: false,
         };
 
@@ -1384,6 +1408,8 @@ inherits = "catppuccin_mocha"
             toml_lsp: None,
             completion: crate::completion::CompletionMenu::new(),
             lsp_doc_version: 1,
+            prev_buffer_idx: 0,
+            active_completion_req: 0,
             pending_c: false,
         };
 
@@ -1498,6 +1524,8 @@ inherits = "catppuccin_mocha"
             toml_lsp: None,
             completion: crate::completion::CompletionMenu::new(),
             lsp_doc_version: 1,
+            prev_buffer_idx: 0,
+            active_completion_req: 0,
             pending_c: false,
         };
 
@@ -1554,6 +1582,8 @@ inherits = "catppuccin_mocha"
             toml_lsp: None,
             completion: crate::completion::CompletionMenu::new(),
             lsp_doc_version: 1,
+            prev_buffer_idx: 0,
+            active_completion_req: 0,
             pending_c: false,
         };
 
@@ -1683,6 +1713,8 @@ inherits = "catppuccin_mocha"
             toml_lsp: None,
             completion: crate::completion::CompletionMenu::new(),
             lsp_doc_version: 1,
+            prev_buffer_idx: 0,
+            active_completion_req: 0,
             pending_c: false,
         };
 
@@ -1815,6 +1847,8 @@ inherits = "catppuccin_mocha"
             toml_lsp: None,
             completion: lsp::completion::CompletionMenu::new(),
             lsp_doc_version: 1,
+            prev_buffer_idx: 0,
+            active_completion_req: 0,
             command_prefix: None,
             command_completion_idx: 0,
             config_path: None,
@@ -1948,6 +1982,8 @@ inherits = "catppuccin_mocha"
             toml_lsp: None,
             completion: lsp::completion::CompletionMenu::new(),
             lsp_doc_version: 1,
+            prev_buffer_idx: 0,
+            active_completion_req: 0,
             pending_c: false,
         };
 
@@ -2040,6 +2076,8 @@ auto-format = false
             toml_lsp: None,
             completion: lsp::completion::CompletionMenu::new(),
             lsp_doc_version: 1,
+            prev_buffer_idx: 0,
+            active_completion_req: 0,
             pending_c: false,
         };
 
@@ -2088,6 +2126,8 @@ auto-format = false
             toml_lsp: None,
             completion: lsp::completion::CompletionMenu::new(),
             lsp_doc_version: 1,
+            prev_buffer_idx: 0,
+            active_completion_req: 0,
             pending_c: false,
         };
 
@@ -2161,6 +2201,159 @@ auto-format = false
         let enum_labels: Vec<&str> = editor.completion.items.iter().map(|it| it.label.as_str()).collect();
         assert!(enum_labels.contains(&"Running"), "Must extract enum variant Running");
         assert!(enum_labels.contains(&"Stopped"), "Must extract enum variant Stopped");
+    }
+
+    #[test]
+    fn test_helix_goto_table_and_buffer_actions() {
+        let mut b1 = Buffer::new(PathBuf::from("first.rs")).unwrap();
+        b1.lines = vec![
+            "fn helper() {}".to_string(),
+            "   let x = 42;".to_string(),
+            "   let y = helper();".to_string(),
+            "fn main() {}".to_string(),
+        ];
+        b1.cursor = types::Position { row: 1, col: 5 };
+        b1.last_edit_pos = types::Position { row: 2, col: 7 };
+
+        let mut b2 = Buffer::new(PathBuf::from("second.rs")).unwrap();
+        b2.lines = vec!["// second file".to_string()];
+
+        let mut editor = Editor {
+            buffers: vec![b1, b2],
+            current_buffer: 0,
+            mode: types::Mode::Normal,
+            goto_return_mode: types::Mode::Normal,
+            match_return_mode: types::Mode::Normal,
+            match_state: types::MatchState::Menu,
+            clipboard: String::new(),
+            command_buffer: String::new(),
+            command_prefix: None,
+            command_completion_idx: 0,
+            status_message: None,
+            file_picker: None,
+            stdout: std::io::stdout(),
+            config: Config::default(),
+            config_path: None,
+            theme: ui::theme::Theme::one_dark(),
+            lsp: None,
+            toml_lsp: None,
+            completion: lsp::completion::CompletionMenu::new(),
+            lsp_doc_version: 1,
+            prev_buffer_idx: 0,
+            active_completion_req: 0,
+            pending_c: false,
+        };
+
+        // 1. Pressing 'g' enters Goto mode
+        editor.handle_key(crossterm::event::KeyCode::Char('g'), crossterm::event::KeyModifiers::NONE).unwrap();
+        assert_eq!(editor.mode, types::Mode::Goto);
+
+        // 2. 's': Goto first non-blank character on line 1 ("   let x = 42;")
+        editor.handle_key(crossterm::event::KeyCode::Char('s'), crossterm::event::KeyModifiers::NONE).unwrap();
+        assert_eq!(editor.mode, types::Mode::Normal);
+        assert_eq!(editor.buf().cursor.row, 1);
+        assert_eq!(editor.buf().cursor.col, 3);
+
+        // 3. 'g' -> 'h': Goto line start (col 0)
+        editor.handle_key(crossterm::event::KeyCode::Char('g'), crossterm::event::KeyModifiers::NONE).unwrap();
+        editor.handle_key(crossterm::event::KeyCode::Char('h'), crossterm::event::KeyModifiers::NONE).unwrap();
+        assert_eq!(editor.buf().cursor.col, 0);
+
+        // 4. 'g' -> 'l': Goto line end
+        editor.handle_key(crossterm::event::KeyCode::Char('g'), crossterm::event::KeyModifiers::NONE).unwrap();
+        editor.handle_key(crossterm::event::KeyCode::Char('l'), crossterm::event::KeyModifiers::NONE).unwrap();
+        assert_eq!(editor.buf().cursor.col, 14);
+
+        // 5. 'g' -> 'g': Goto start of file (row 0, col 0)
+        editor.handle_key(crossterm::event::KeyCode::Char('g'), crossterm::event::KeyModifiers::NONE).unwrap();
+        editor.handle_key(crossterm::event::KeyCode::Char('g'), crossterm::event::KeyModifiers::NONE).unwrap();
+        assert_eq!(editor.buf().cursor.row, 0);
+        assert_eq!(editor.buf().cursor.col, 0);
+
+        // 6. 'g' -> 'e': Goto end of file (row 3)
+        editor.handle_key(crossterm::event::KeyCode::Char('g'), crossterm::event::KeyModifiers::NONE).unwrap();
+        editor.handle_key(crossterm::event::KeyCode::Char('e'), crossterm::event::KeyModifiers::NONE).unwrap();
+        assert_eq!(editor.buf().cursor.row, 3);
+
+        // 7. 'g' -> '.': Goto last modification position
+        editor.handle_key(crossterm::event::KeyCode::Char('g'), crossterm::event::KeyModifiers::NONE).unwrap();
+        editor.handle_key(crossterm::event::KeyCode::Char('.'), crossterm::event::KeyModifiers::NONE).unwrap();
+        assert_eq!(editor.buf().cursor.row, 2);
+        assert_eq!(editor.buf().cursor.col, 7);
+
+        // 8. 'g' -> 'd': Goto definition of "helper" on line 2
+        editor.buf_mut().cursor = types::Position { row: 2, col: 12 }; // over "helper"
+        editor.handle_key(crossterm::event::KeyCode::Char('g'), crossterm::event::KeyModifiers::NONE).unwrap();
+        editor.handle_key(crossterm::event::KeyCode::Char('d'), crossterm::event::KeyModifiers::NONE).unwrap();
+        assert_eq!(editor.buf().cursor.row, 0); // "fn helper() {}"
+
+        // 9. Buffer switching: 'gn' (next buffer), 'gp' (previous buffer), 'ga' (alternate buffer)
+        editor.handle_key(crossterm::event::KeyCode::Char('g'), crossterm::event::KeyModifiers::NONE).unwrap();
+        editor.handle_key(crossterm::event::KeyCode::Char('n'), crossterm::event::KeyModifiers::NONE).unwrap();
+        assert_eq!(editor.current_buffer, 1);
+
+        editor.handle_key(crossterm::event::KeyCode::Char('g'), crossterm::event::KeyModifiers::NONE).unwrap();
+        editor.handle_key(crossterm::event::KeyCode::Char('p'), crossterm::event::KeyModifiers::NONE).unwrap();
+        assert_eq!(editor.current_buffer, 0);
+
+        editor.handle_key(crossterm::event::KeyCode::Char('g'), crossterm::event::KeyModifiers::NONE).unwrap();
+        editor.handle_key(crossterm::event::KeyCode::Char('a'), crossterm::event::KeyModifiers::NONE).unwrap();
+        assert_eq!(editor.current_buffer, 1);
+
+        // 10. 'g' -> Esc cancels goto menu
+        editor.handle_key(crossterm::event::KeyCode::Char('g'), crossterm::event::KeyModifiers::NONE).unwrap();
+        assert_eq!(editor.mode, types::Mode::Goto);
+        editor.handle_key(crossterm::event::KeyCode::Esc, crossterm::event::KeyModifiers::NONE).unwrap();
+        assert_eq!(editor.mode, types::Mode::Normal);
+    }
+
+    #[test]
+    fn test_idle_whitespace_no_inline_keyword_completions() {
+        let mut buf = Buffer::new(PathBuf::from("idle.rs")).unwrap();
+        buf.lines = vec![
+            "fn main() {".to_string(),
+            "    ".to_string(),
+            "}".to_string(),
+        ];
+        buf.cursor = types::Position { row: 1, col: 4 }; // On 4 spaces
+        buf.anchor = buf.cursor;
+        buf.language = Some("rust".to_string());
+        buf.reparse();
+
+        let mut editor = Editor {
+            buffers: vec![buf],
+            current_buffer: 0,
+            mode: types::Mode::Insert,
+            goto_return_mode: types::Mode::Normal,
+            match_return_mode: types::Mode::Normal,
+            match_state: types::MatchState::Menu,
+            clipboard: String::new(),
+            command_buffer: String::new(),
+            command_prefix: None,
+            command_completion_idx: 0,
+            status_message: None,
+            file_picker: None,
+            stdout: std::io::stdout(),
+            config: Config::default(),
+            config_path: None,
+            theme: ui::theme::Theme::one_dark(),
+            lsp: None,
+            toml_lsp: None,
+            completion: lsp::completion::CompletionMenu::new(),
+            lsp_doc_version: 1,
+            prev_buffer_idx: 0,
+            active_completion_req: 0,
+            pending_c: false,
+        };
+
+        // When cursor is on whitespace without typing prefix, completion must NOT be shown
+        editor.trigger_completion();
+        assert!(!editor.completion.visible, "Completion popup must stay hidden on idle/whitespace");
+
+        // Even if completion was previously opened, it should close on whitespace
+        editor.completion.visible = true;
+        editor.trigger_completion();
+        assert!(!editor.completion.visible, "Completion popup must close when idle on whitespace");
     }
 }
 

@@ -39,15 +39,24 @@ pub struct CompletionItem {
     pub insert_text: Option<String>,
 }
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Location {
+    pub path: PathBuf,
+    pub line: usize,
+    pub col: usize,
+}
+
 #[allow(clippy::type_complexity)]
 pub struct LspClient {
     pub process: Option<Child>,
     pub stdin: Arc<Mutex<Option<ChildStdin>>>,
     pub diagnostics: Arc<Mutex<HashMap<PathBuf, Vec<Diagnostic>>>>,
     pub latest_completions: Arc<Mutex<Option<(u64, Vec<CompletionItem>)>>>,
+    pub latest_definition: Arc<Mutex<Option<(u64, Option<Location>)>>>,
     pub request_counter: Arc<AtomicU64>,
     pub diag_version: Arc<AtomicU64>,
     pub completion_version: Arc<AtomicU64>,
+    pub definition_version: Arc<AtomicU64>,
     pub is_running: Arc<AtomicBool>,
     pub root_dir: PathBuf,
 }
@@ -82,16 +91,20 @@ impl LspClient {
         let stdin_mutex = Arc::new(Mutex::new(Some(stdin)));
         let diagnostics = Arc::new(Mutex::new(HashMap::new()));
         let latest_completions = Arc::new(Mutex::new(None));
+        let latest_definition = Arc::new(Mutex::new(None));
         let request_counter = Arc::new(AtomicU64::new(1));
         let diag_version = Arc::new(AtomicU64::new(0));
         let completion_version = Arc::new(AtomicU64::new(0));
+        let definition_version = Arc::new(AtomicU64::new(0));
         let is_running = Arc::new(AtomicBool::new(true));
 
         // Background reader thread
         let diag_clone = Arc::clone(&diagnostics);
         let comp_clone = Arc::clone(&latest_completions);
+        let def_clone = Arc::clone(&latest_definition);
         let diag_ver_clone = Arc::clone(&diag_version);
         let comp_ver_clone = Arc::clone(&completion_version);
+        let def_ver_clone = Arc::clone(&definition_version);
         let running_clone = Arc::clone(&is_running);
 
         thread::spawn(move || {
@@ -122,8 +135,10 @@ impl LspClient {
                                 &json_val,
                                 &diag_clone,
                                 &comp_clone,
+                                &def_clone,
                                 &diag_ver_clone,
                                 &comp_ver_clone,
+                                &def_ver_clone,
                             );
                         }
                 }
@@ -135,38 +150,76 @@ impl LspClient {
             stdin: stdin_mutex,
             diagnostics,
             latest_completions,
+            latest_definition,
             request_counter,
             diag_version,
             completion_version,
+            definition_version,
             is_running,
             root_dir: root_dir.clone(),
         };
 
-        // Send initialize request
-        let root_uri = format!("file://{}", root_dir.display());
+        // Send initialize request (Helix-compatible LSP handshake)
+        let root_uri = path_to_uri(&root_dir);
         let init_req = json!({
             "jsonrpc": "2.0",
             "id": 1,
             "method": "initialize",
             "params": {
                 "processId": std::process::id(),
+                "rootPath": root_dir.to_string_lossy(),
                 "rootUri": root_uri,
                 "capabilities": {
+                    "workspace": {
+                        "workspaceFolders": true
+                    },
                     "textDocument": {
-                        "completion": {
-                            "completionItem": {
-                                "snippetSupport": false
-                            }
-                        },
                         "synchronization": {
-                            "didSave": true,
+                            "dynamicRegistration": false,
+                            "willSave": false,
+                            "willSaveWaitUntil": false,
+                            "didSave": true
+                        },
+                        "completion": {
+                            "dynamicRegistration": false,
+                            "completionItem": {
+                                "snippetSupport": true,
+                                "commitCharactersSupport": true,
+                                "documentationFormat": ["markdown", "plaintext"],
+                                "insertReplaceSupport": true,
+                                "labelDetailsSupport": true
+                            },
+                            "contextSupport": true
+                        },
+                        "definition": {
+                            "dynamicRegistration": false,
+                            "linkSupport": true
+                        },
+                        "typeDefinition": {
+                            "linkSupport": true
+                        },
+                        "implementation": {
+                            "linkSupport": true
+                        },
+                        "references": {
                             "dynamicRegistration": false
                         },
+                        "hover": {
+                            "contentFormat": ["markdown", "plaintext"]
+                        },
                         "publishDiagnostics": {
-                            "relatedInformation": true
+                            "relatedInformation": true,
+                            "versionSupport": true
                         }
                     }
-                }
+                },
+                "workspaceFolders": [
+                    {
+                        "name": "workspace",
+                        "uri": root_uri
+                    }
+                ],
+                "initializationOptions": {}
             }
         });
         client.send_payload(&init_req);
@@ -244,9 +297,26 @@ impl LspClient {
         self.send_payload(&msg);
     }
 
-    pub fn request_completion(&self, path: &Path, line: usize, col: usize) -> u64 {
+    pub fn request_completion(
+        &self,
+        path: &Path,
+        line: usize,
+        col: usize,
+        trigger_char: Option<char>,
+    ) -> u64 {
         let id = self.request_counter.fetch_add(1, Ordering::SeqCst);
         let uri = path_to_uri(path);
+        let (trigger_kind, trigger_char_val) = match trigger_char {
+            Some(c) => (2, Some(c.to_string())),
+            None => (1, None),
+        };
+        let mut context = json!({
+            "triggerKind": trigger_kind
+        });
+        if let Some(ch) = trigger_char_val {
+            context["triggerCharacter"] = json!(ch);
+        }
+
         let msg = json!({
             "jsonrpc": "2.0",
             "id": id,
@@ -258,6 +328,94 @@ impl LspClient {
                 "position": {
                     "line": line,
                     "character": col
+                },
+                "context": context
+            }
+        });
+        self.send_payload(&msg);
+        id
+    }
+
+    pub fn request_definition(&self, path: &Path, line: usize, col: usize) -> u64 {
+        let id = self.request_counter.fetch_add(1, Ordering::SeqCst);
+        let uri = path_to_uri(path);
+        let msg = json!({
+            "jsonrpc": "2.0",
+            "id": id,
+            "method": "textDocument/definition",
+            "params": {
+                "textDocument": {
+                    "uri": uri
+                },
+                "position": {
+                    "line": line,
+                    "character": col
+                }
+            }
+        });
+        self.send_payload(&msg);
+        id
+    }
+
+    pub fn request_type_definition(&self, path: &Path, line: usize, col: usize) -> u64 {
+        let id = self.request_counter.fetch_add(1, Ordering::SeqCst);
+        let uri = path_to_uri(path);
+        let msg = json!({
+            "jsonrpc": "2.0",
+            "id": id,
+            "method": "textDocument/typeDefinition",
+            "params": {
+                "textDocument": {
+                    "uri": uri
+                },
+                "position": {
+                    "line": line,
+                    "character": col
+                }
+            }
+        });
+        self.send_payload(&msg);
+        id
+    }
+
+    pub fn request_implementation(&self, path: &Path, line: usize, col: usize) -> u64 {
+        let id = self.request_counter.fetch_add(1, Ordering::SeqCst);
+        let uri = path_to_uri(path);
+        let msg = json!({
+            "jsonrpc": "2.0",
+            "id": id,
+            "method": "textDocument/implementation",
+            "params": {
+                "textDocument": {
+                    "uri": uri
+                },
+                "position": {
+                    "line": line,
+                    "character": col
+                }
+            }
+        });
+        self.send_payload(&msg);
+        id
+    }
+
+    pub fn request_references(&self, path: &Path, line: usize, col: usize) -> u64 {
+        let id = self.request_counter.fetch_add(1, Ordering::SeqCst);
+        let uri = path_to_uri(path);
+        let msg = json!({
+            "jsonrpc": "2.0",
+            "id": id,
+            "method": "textDocument/references",
+            "params": {
+                "textDocument": {
+                    "uri": uri
+                },
+                "position": {
+                    "line": line,
+                    "character": col
+                },
+                "context": {
+                    "includeDeclaration": true
                 }
             }
         });
@@ -288,12 +446,38 @@ impl LspClient {
         }
     }
 
+    pub fn get_completions_for(&self, req_id: u64) -> Option<Vec<CompletionItem>> {
+        if let Ok(guard) = self.latest_completions.lock()
+            && let Some((id, items)) = guard.as_ref()
+            && *id == req_id
+        {
+            Some(items.clone())
+        } else {
+            None
+        }
+    }
+
+    pub fn get_definition_for(&self, req_id: u64) -> Option<Location> {
+        if let Ok(guard) = self.latest_definition.lock()
+            && let Some((id, loc_opt)) = guard.as_ref()
+            && *id == req_id
+        {
+            loc_opt.clone()
+        } else {
+            None
+        }
+    }
+
     pub fn diag_version(&self) -> u64 {
         self.diag_version.load(Ordering::Relaxed)
     }
 
     pub fn completion_version(&self) -> u64 {
         self.completion_version.load(Ordering::Relaxed)
+    }
+
+    pub fn definition_version(&self) -> u64 {
+        self.definition_version.load(Ordering::Relaxed)
     }
 
     pub fn stop(&mut self) {
@@ -318,11 +502,22 @@ fn path_to_uri(path: &Path) -> String {
     } else {
         std::env::current_dir().unwrap_or_default().join(path)
     };
-    format!("file://{}", p.display())
+    let path_str = p.to_string_lossy().replace('\\', "/");
+    if path_str.starts_with('/') {
+        format!("file://{path_str}")
+    } else {
+        format!("file:///{path_str}")
+    }
 }
 
 fn uri_to_path(uri: &str) -> Option<PathBuf> {
-    uri.strip_prefix("file://").map(PathBuf::from)
+    let stripped = uri.strip_prefix("file://")?;
+    let path_str = if stripped.starts_with('/') && stripped.chars().nth(2) == Some(':') {
+        &stripped[1..]
+    } else {
+        stripped
+    };
+    Some(PathBuf::from(path_str))
 }
 
 pub fn find_rust_analyzer() -> Option<PathBuf> {
@@ -349,7 +544,8 @@ pub fn find_rust_analyzer() -> Option<PathBuf> {
             }
         }
     }
-    None
+    // 3. Fallback to command name in path
+    Some(PathBuf::from("rust-analyzer"))
 }
 
 pub fn find_taplo() -> Option<PathBuf> {
@@ -376,6 +572,35 @@ pub fn find_taplo() -> Option<PathBuf> {
             }
         }
     }
+    // 3. Fallback to command name in path
+    Some(PathBuf::from("taplo"))
+}
+
+pub fn parse_location(val: &Value) -> Option<Location> {
+    if let Some(arr) = val.as_array() {
+        if let Some(first) = arr.first() {
+            return parse_location(first);
+        }
+        return None;
+    }
+    if let Some(uri_str) = val.get("uri").and_then(|u| u.as_str())
+        && let Some(path) = uri_to_path(uri_str)
+        && let Some(range) = val.get("range")
+        && let Some(start) = range.get("start")
+    {
+        let line = start.get("line").and_then(|l| l.as_u64()).unwrap_or(0) as usize;
+        let col = start.get("character").and_then(|c| c.as_u64()).unwrap_or(0) as usize;
+        return Some(Location { path, line, col });
+    }
+    if let Some(uri_str) = val.get("targetUri").and_then(|u| u.as_str())
+        && let Some(path) = uri_to_path(uri_str)
+        && let Some(range) = val.get("targetSelectionRange").or_else(|| val.get("targetRange"))
+        && let Some(start) = range.get("start")
+    {
+        let line = start.get("line").and_then(|l| l.as_u64()).unwrap_or(0) as usize;
+        let col = start.get("character").and_then(|c| c.as_u64()).unwrap_or(0) as usize;
+        return Some(Location { path, line, col });
+    }
     None
 }
 
@@ -384,74 +609,79 @@ fn handle_lsp_message(
     val: &Value,
     diagnostics: &Arc<Mutex<HashMap<PathBuf, Vec<Diagnostic>>>>,
     latest_completions: &Arc<Mutex<Option<(u64, Vec<CompletionItem>)>>>,
+    latest_definition: &Arc<Mutex<Option<(u64, Option<Location>)>>>,
     diag_version: &Arc<AtomicU64>,
     completion_version: &Arc<AtomicU64>,
+    definition_version: &Arc<AtomicU64>,
 ) {
     // 1. Check for publishDiagnostics notification
     if val.get("method").and_then(|m| m.as_str()) == Some("textDocument/publishDiagnostics") {
         if let Some(params) = val.get("params")
             && let Some(uri_str) = params.get("uri").and_then(|u| u.as_str())
-                && let Some(path) = uri_to_path(uri_str) {
-                    let mut diags = Vec::new();
-                    if let Some(diag_array) = params.get("diagnostics").and_then(|d| d.as_array()) {
-                        for item in diag_array {
-                            let line = item
-                                .get("range")
-                                .and_then(|r| r.get("start"))
-                                .and_then(|s| s.get("line"))
-                                .and_then(|l| l.as_u64())
-                                .unwrap_or(0) as usize;
-                            let col_start = item
-                                .get("range")
-                                .and_then(|r| r.get("start"))
-                                .and_then(|s| s.get("character"))
-                                .and_then(|c| c.as_u64())
-                                .unwrap_or(0) as usize;
-                            let col_end = item
-                                .get("range")
-                                .and_then(|r| r.get("end"))
-                                .and_then(|s| s.get("character"))
-                                .and_then(|c| c.as_u64())
-                                .map(|c| c as usize)
-                                .unwrap_or(col_start + 1);
-                            let sev_num =
-                                item.get("severity").and_then(|s| s.as_u64()).unwrap_or(1);
-                            let severity = match sev_num {
-                                1 => DiagnosticSeverity::Error,
-                                2 => DiagnosticSeverity::Warning,
-                                3 => DiagnosticSeverity::Information,
-                                _ => DiagnosticSeverity::Hint,
-                            };
-                            let message = item
-                                .get("message")
-                                .and_then(|m| m.as_str())
-                                .unwrap_or("")
-                                .to_string();
+            && let Some(path) = uri_to_path(uri_str) {
+                let mut diags = Vec::new();
+                if let Some(diag_array) = params.get("diagnostics").and_then(|d| d.as_array()) {
+                    for item in diag_array {
+                        let line = item
+                            .get("range")
+                            .and_then(|r| r.get("start"))
+                            .and_then(|s| s.get("line"))
+                            .and_then(|l| l.as_u64())
+                            .unwrap_or(0) as usize;
+                        let col_start = item
+                            .get("range")
+                            .and_then(|r| r.get("start"))
+                            .and_then(|s| s.get("character"))
+                            .and_then(|c| c.as_u64())
+                            .unwrap_or(0) as usize;
+                        let col_end = item
+                            .get("range")
+                            .and_then(|r| r.get("end"))
+                            .and_then(|s| s.get("character"))
+                            .and_then(|c| c.as_u64())
+                            .map(|c| c as usize)
+                            .unwrap_or(col_start + 1);
+                        let sev_num =
+                            item.get("severity").and_then(|s| s.as_u64()).unwrap_or(1);
+                        let severity = match sev_num {
+                            1 => DiagnosticSeverity::Error,
+                            2 => DiagnosticSeverity::Warning,
+                            3 => DiagnosticSeverity::Information,
+                            _ => DiagnosticSeverity::Hint,
+                        };
+                        let message = item
+                            .get("message")
+                            .and_then(|m| m.as_str())
+                            .unwrap_or("")
+                            .to_string();
 
-                            diags.push(Diagnostic {
-                                line,
-                                col_start,
-                                col_end,
-                                severity,
-                                message,
-                            });
-                        }
-                    }
-                    if let Ok(mut guard) = diagnostics.lock() {
-                        guard.insert(path, diags);
-                        diag_version.fetch_add(1, Ordering::SeqCst);
+                        diags.push(Diagnostic {
+                            line,
+                            col_start,
+                            col_end,
+                            severity,
+                            message,
+                        });
                     }
                 }
+                if let Ok(mut guard) = diagnostics.lock() {
+                    guard.insert(path, diags);
+                    diag_version.fetch_add(1, Ordering::SeqCst);
+                }
+            }
         return;
     }
 
-    // 2. Check for completion response
-    if let Some(id) = val.get("id").and_then(|id| id.as_u64())
-        && let Some(result) = val.get("result") {
+    // 2. Check for response by ID
+    if let Some(id) = val.get("id").and_then(|id| id.as_u64()) {
+        if let Some(result) = val.get("result") {
+            // Check if result is completion
             let items_val = if let Some(items) = result.get("items").and_then(|i| i.as_array()) {
                 Some(items)
-            } else {
+            } else if result.is_array() {
                 result.as_array()
+            } else {
+                None
             };
 
             if let Some(items_list) = items_val {
@@ -478,8 +708,20 @@ fn handle_lsp_message(
                     *guard = Some((id, completions));
                     completion_version.fetch_add(1, Ordering::SeqCst);
                 }
+            } else {
+                // Check if result is definition / location
+                let loc = parse_location(result);
+                if let Ok(mut guard) = latest_definition.lock() {
+                    *guard = Some((id, loc));
+                    definition_version.fetch_add(1, Ordering::SeqCst);
+                }
             }
+        } else if val.get("error").is_some()
+            && let Ok(mut guard) = latest_definition.lock() {
+            *guard = Some((id, None));
+            definition_version.fetch_add(1, Ordering::SeqCst);
         }
+    }
 }
 
 pub fn completion_kind_to_str(kind: u64) -> &'static str {

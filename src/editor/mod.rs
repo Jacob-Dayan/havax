@@ -20,7 +20,7 @@ use crate::buffer::Buffer;
 use crate::config::{Bufferline, Config};
 use crate::lsp::LspClient;
 use crate::lsp::completion::CompletionMenu;
-use crate::types::{MatchState, Mode};
+use crate::types::{MatchState, Mode, Position};
 use crate::ui::picker::FilePicker;
 use crate::ui::theme::Theme;
 
@@ -52,6 +52,8 @@ pub struct Editor {
     pub completion: CompletionMenu,
     pub lsp_doc_version: i32,
     pub pending_c: bool,
+    pub prev_buffer_idx: usize,
+    pub active_completion_req: u64,
 }
 
 impl Editor {
@@ -102,6 +104,8 @@ impl Editor {
             completion,
             lsp_doc_version: 1,
             pending_c: false,
+            prev_buffer_idx: 0,
+            active_completion_req: 0,
         };
 
         editor.notify_lsp_open();
@@ -359,6 +363,14 @@ impl Editor {
             }
         }
 
+        if scope_path.is_none() && dot_call.is_none() && filter_prefix.is_empty() {
+            self.completion.close();
+            return;
+        }
+
+        let is_scope = scope_path.is_some();
+        let is_dot = dot_call.is_some();
+
         let (trigger_col, display_prefix, mut items) = if let Some((scope, f_start, f_prefix)) =
             scope_path
         {
@@ -446,8 +458,16 @@ impl Editor {
             None
         };
         if let Some(lsp) = lsp_client {
-            let _ = lsp.request_completion(&buf.path, row, cur_col);
-            if let Some((_, lsp_items)) = lsp.get_completions() {
+            let trigger_char = if is_scope {
+                Some(':')
+            } else if is_dot {
+                Some('.')
+            } else {
+                None
+            };
+            let req_id = lsp.request_completion(&buf.path, row, cur_col, trigger_char);
+            self.active_completion_req = req_id;
+            if let Some(lsp_items) = lsp.get_completions_for(req_id) {
                 for item in lsp_items {
                     if !items.iter().any(|it| it.label == item.label) {
                         items.insert(0, item);
@@ -638,6 +658,7 @@ impl Editor {
         if self.buffers.is_empty() {
             return;
         }
+        self.prev_buffer_idx = self.current_buffer;
         self.current_buffer = (self.current_buffer + 1) % self.buffers.len();
         self.notify_lsp_open();
         let path = self.buf().path.display().to_string();
@@ -656,6 +677,7 @@ impl Editor {
         if self.buffers.is_empty() {
             return;
         }
+        self.prev_buffer_idx = self.current_buffer;
         self.current_buffer = (self.current_buffer + self.buffers.len() - 1) % self.buffers.len();
         self.notify_lsp_open();
         let path = self.buf().path.display().to_string();
@@ -668,6 +690,207 @@ impl Editor {
             ),
             false,
         );
+    }
+
+    pub fn switch_alternate_buffer(&mut self) {
+        if self.buffers.is_empty() {
+            return;
+        }
+        if self.prev_buffer_idx < self.buffers.len() && self.prev_buffer_idx != self.current_buffer {
+            std::mem::swap(&mut self.prev_buffer_idx, &mut self.current_buffer);
+            self.notify_lsp_open();
+            let path = self.buf().path.display().to_string();
+            self.set_status(&format!("Buffer [{}/{}] {}", self.current_buffer + 1, self.buffers.len(), path), false);
+        }
+    }
+
+    pub fn switch_last_modified_buffer(&mut self) {
+        if self.buffers.is_empty() {
+            return;
+        }
+        if let Some(idx) = self.buffers.iter().position(|b| b.modified) {
+            self.prev_buffer_idx = self.current_buffer;
+            self.current_buffer = idx;
+            self.notify_lsp_open();
+            let path = self.buf().path.display().to_string();
+            self.set_status(&format!("Buffer [{}/{}] {}", self.current_buffer + 1, self.buffers.len(), path), false);
+        }
+    }
+
+    pub fn goto_definition(&mut self) -> Result<(), Box<dyn Error>> {
+        let buf = self.buf();
+        let row = buf.cursor.row;
+        let col = buf.cursor.col;
+        let path = buf.path.clone();
+        let is_rust = buf.language() == "rust";
+        let is_toml = buf.language() == "toml";
+
+        let lsp_client = if is_rust {
+            self.lsp.as_ref()
+        } else if is_toml {
+            self.toml_lsp.as_ref()
+        } else {
+            None
+        };
+
+        if let Some(lsp) = lsp_client {
+            let req_id = lsp.request_definition(&path, row, col);
+            let start = std::time::Instant::now();
+            while start.elapsed() < std::time::Duration::from_millis(150) {
+                if let Some(loc) = lsp.get_definition_for(req_id) {
+                    self.jump_to_location(&loc)?;
+                    self.set_status(&format!("Jumped to {}:{}", loc.path.display(), loc.line + 1), false);
+                    return Ok(());
+                }
+                std::thread::sleep(std::time::Duration::from_millis(10));
+            }
+        }
+
+        // Fallback: search symbol in buffer
+        let word = self.buf().get_word_at_cursor();
+        if !word.is_empty() {
+            let found = self.buf().lines.iter().enumerate().find_map(|(idx, line)| {
+                if (line.contains(&format!("fn {word}"))
+                    || line.contains(&format!("struct {word}"))
+                    || line.contains(&format!("enum {word}"))
+                    || line.contains(&format!("type {word}"))
+                    || line.contains(&format!("trait {word}"))
+                    || line.contains(&format!("mod {word}")))
+                    && idx != row
+                {
+                    let col = line.find(&word).unwrap_or(0);
+                    Some((idx, col))
+                } else {
+                    None
+                }
+            });
+            if let Some((target_row, target_col)) = found {
+                let target_pos = Position {
+                    row: target_row,
+                    col: target_col,
+                };
+                let buf = self.buf_mut();
+                buf.cursor = target_pos;
+                buf.anchor = target_pos;
+                self.set_status(&format!("Jumped to definition on line {}", target_row + 1), false);
+                return Ok(());
+            }
+        }
+        self.set_status("No definition found", false);
+        Ok(())
+    }
+
+    pub fn goto_type_definition(&mut self) -> Result<(), Box<dyn Error>> {
+        let buf = self.buf();
+        let row = buf.cursor.row;
+        let col = buf.cursor.col;
+        let path = buf.path.clone();
+        if let Some(lsp) = &self.lsp {
+            let req_id = lsp.request_type_definition(&path, row, col);
+            let start = std::time::Instant::now();
+            while start.elapsed() < std::time::Duration::from_millis(150) {
+                if let Some(loc) = lsp.get_definition_for(req_id) {
+                    self.jump_to_location(&loc)?;
+                    self.set_status(&format!("Jumped to type {}:{}", loc.path.display(), loc.line + 1), false);
+                    return Ok(());
+                }
+                std::thread::sleep(std::time::Duration::from_millis(10));
+            }
+        }
+        self.set_status("No type definition found", false);
+        Ok(())
+    }
+
+    pub fn goto_implementation(&mut self) -> Result<(), Box<dyn Error>> {
+        let buf = self.buf();
+        let row = buf.cursor.row;
+        let col = buf.cursor.col;
+        let path = buf.path.clone();
+        if let Some(lsp) = &self.lsp {
+            let req_id = lsp.request_implementation(&path, row, col);
+            let start = std::time::Instant::now();
+            while start.elapsed() < std::time::Duration::from_millis(150) {
+                if let Some(loc) = lsp.get_definition_for(req_id) {
+                    self.jump_to_location(&loc)?;
+                    self.set_status(&format!("Jumped to impl {}:{}", loc.path.display(), loc.line + 1), false);
+                    return Ok(());
+                }
+                std::thread::sleep(std::time::Duration::from_millis(10));
+            }
+        }
+        self.set_status("No implementation found", false);
+        Ok(())
+    }
+
+    pub fn goto_references(&mut self) -> Result<(), Box<dyn Error>> {
+        let buf = self.buf();
+        let row = buf.cursor.row;
+        let col = buf.cursor.col;
+        let path = buf.path.clone();
+        if let Some(lsp) = &self.lsp {
+            let req_id = lsp.request_references(&path, row, col);
+            let start = std::time::Instant::now();
+            while start.elapsed() < std::time::Duration::from_millis(150) {
+                if let Some(loc) = lsp.get_definition_for(req_id) {
+                    self.jump_to_location(&loc)?;
+                    self.set_status(&format!("Jumped to ref {}:{}", loc.path.display(), loc.line + 1), false);
+                    return Ok(());
+                }
+                std::thread::sleep(std::time::Duration::from_millis(10));
+            }
+        }
+        self.set_status("No references found", false);
+        Ok(())
+    }
+
+    pub fn goto_file(&mut self) -> Result<(), Box<dyn Error>> {
+        let word = self.buf().get_word_at_cursor();
+        let line = self.buf().lines.get(self.buf().cursor.row).cloned().unwrap_or_default();
+        let mut candidate_path = None;
+        if let Some(start) = line.find('"')
+            && let Some(end) = line[start + 1..].find('"') {
+                let p = PathBuf::from(&line[start + 1..start + 1 + end]);
+                if p.exists() {
+                    candidate_path = Some(p);
+                }
+            }
+        if candidate_path.is_none() && !word.is_empty() {
+            let p = PathBuf::from(&word);
+            if p.exists() {
+                candidate_path = Some(p);
+            } else {
+                let with_rs = PathBuf::from(format!("{word}.rs"));
+                if with_rs.exists() {
+                    candidate_path = Some(with_rs);
+                }
+            }
+        }
+        if let Some(p) = candidate_path {
+            self.open_buffer(p)?;
+        } else {
+            self.set_status("File not found under cursor", false);
+        }
+        Ok(())
+    }
+
+    pub fn jump_to_location(&mut self, loc: &crate::lsp::Location) -> Result<(), Box<dyn Error>> {
+        let target_idx = self.buffers.iter().position(|b| b.path == loc.path);
+        if let Some(idx) = target_idx {
+            self.prev_buffer_idx = self.current_buffer;
+            self.current_buffer = idx;
+        } else if loc.path.exists() {
+            self.prev_buffer_idx = self.current_buffer;
+            self.buffers.push(Buffer::new(loc.path.clone())?);
+            self.current_buffer = self.buffers.len() - 1;
+            self.notify_lsp_open();
+        }
+        let buf = self.buf_mut();
+        buf.cursor.row = loc.line.min(buf.lines.len().saturating_sub(1));
+        let line_len = buf.lines.get(buf.cursor.row).map(|l| l.chars().count()).unwrap_or(0);
+        buf.cursor.col = loc.col.min(line_len);
+        buf.anchor = buf.cursor;
+        buf.scroll_row = buf.cursor.row.saturating_sub(10);
+        Ok(())
     }
 
     pub fn close_current_buffer(&mut self, force: bool) -> Result<bool, Box<dyn Error>> {
@@ -766,7 +989,7 @@ impl Editor {
             None
         };
         if let Some(lsp) = lsp_client
-            && let Some((_, lsp_items)) = lsp.get_completions()
+            && let Some(lsp_items) = lsp.get_completions_for(self.active_completion_req)
         {
             let filter = self.completion.prefix.to_lowercase();
             for item in lsp_items {

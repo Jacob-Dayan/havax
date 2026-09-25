@@ -605,44 +605,112 @@ impl Editor {
 
             Mode::Goto => {
                 let return_mode = self.goto_return_mode;
-                {
-                    let buf = self.buf_mut();
-                    match code {
-                        KeyCode::Char('s') => {
-                            // Helix 'gs': goto first non-blank character of the line
-                            let non_ws = buf.lines[buf.cursor.row]
-                                .chars()
-                                .position(|c| !c.is_whitespace())
-                                .unwrap_or(0);
-                            buf.cursor.col = non_ws;
+                match code {
+                    KeyCode::Char('s') => {
+                        let buf = self.buf_mut();
+                        let non_ws = buf.lines[buf.cursor.row]
+                            .chars()
+                            .position(|c| !c.is_whitespace())
+                            .unwrap_or(0);
+                        buf.cursor.col = non_ws;
+                        if return_mode != Mode::Visual {
+                            buf.anchor = buf.cursor;
                         }
-                        KeyCode::Char('h') => buf.cursor.col = 0,
-                        KeyCode::Char('l') => {
-                            buf.cursor.col = buf.lines[buf.cursor.row].chars().count();
-                        }
-                        KeyCode::Char('g') => {
-                            buf.cursor.row = 0;
-                            buf.cursor.col = 0;
-                        }
-                        KeyCode::Char('e') => {
-                            buf.cursor.row = buf.lines.len().saturating_sub(1);
-                            buf.cursor.col = 0;
-                        }
-                        KeyCode::Char('t') => {
-                            buf.cursor.row = buf.scroll_row;
-                        }
-                        KeyCode::Char('b') => {
-                            let (_, rows) = size()?;
-                            let content_rows = (rows.saturating_sub(2) as usize).max(1);
-                            buf.cursor.row = (buf.scroll_row + content_rows.saturating_sub(1))
-                                .min(buf.lines.len().saturating_sub(1));
-                        }
-                        KeyCode::Esc => {}
-                        _ => {}
                     }
-                    if return_mode != Mode::Visual {
-                        buf.anchor = buf.cursor;
+                    KeyCode::Char('h') => {
+                        let buf = self.buf_mut();
+                        buf.cursor.col = 0;
+                        if return_mode != Mode::Visual {
+                            buf.anchor = buf.cursor;
+                        }
                     }
+                    KeyCode::Char('l') => {
+                        let buf = self.buf_mut();
+                        buf.cursor.col = buf.lines[buf.cursor.row].chars().count();
+                        if return_mode != Mode::Visual {
+                            buf.anchor = buf.cursor;
+                        }
+                    }
+                    KeyCode::Char('g') => {
+                        let buf = self.buf_mut();
+                        buf.cursor.row = 0;
+                        buf.cursor.col = 0;
+                        if return_mode != Mode::Visual {
+                            buf.anchor = buf.cursor;
+                        }
+                    }
+                    KeyCode::Char('e') => {
+                        let buf = self.buf_mut();
+                        buf.cursor.row = buf.lines.len().saturating_sub(1);
+                        buf.cursor.col = 0;
+                        if return_mode != Mode::Visual {
+                            buf.anchor = buf.cursor;
+                        }
+                    }
+                    KeyCode::Char('t') => {
+                        let buf = self.buf_mut();
+                        buf.cursor.row = buf.scroll_row;
+                        if return_mode != Mode::Visual {
+                            buf.anchor = buf.cursor;
+                        }
+                    }
+                    KeyCode::Char('c') => {
+                        let (_, rows) = size()?;
+                        let content_rows = (rows.saturating_sub(2) as usize).max(1);
+                        let buf = self.buf_mut();
+                        buf.cursor.row = (buf.scroll_row + content_rows / 2)
+                            .min(buf.lines.len().saturating_sub(1));
+                        if return_mode != Mode::Visual {
+                            buf.anchor = buf.cursor;
+                        }
+                    }
+                    KeyCode::Char('b') => {
+                        let (_, rows) = size()?;
+                        let content_rows = (rows.saturating_sub(2) as usize).max(1);
+                        let buf = self.buf_mut();
+                        buf.cursor.row = (buf.scroll_row + content_rows.saturating_sub(1))
+                            .min(buf.lines.len().saturating_sub(1));
+                        if return_mode != Mode::Visual {
+                            buf.anchor = buf.cursor;
+                        }
+                    }
+                    KeyCode::Char('d') => {
+                        self.goto_definition()?;
+                    }
+                    KeyCode::Char('y') => {
+                        self.goto_type_definition()?;
+                    }
+                    KeyCode::Char('i') => {
+                        self.goto_implementation()?;
+                    }
+                    KeyCode::Char('r') => {
+                        self.goto_references()?;
+                    }
+                    KeyCode::Char('f') => {
+                        self.goto_file()?;
+                    }
+                    KeyCode::Char('n') => {
+                        self.next_buffer();
+                    }
+                    KeyCode::Char('p') => {
+                        self.prev_buffer();
+                    }
+                    KeyCode::Char('a') => {
+                        self.switch_alternate_buffer();
+                    }
+                    KeyCode::Char('m') => {
+                        self.switch_last_modified_buffer();
+                    }
+                    KeyCode::Char('.') => {
+                        let last_edit = self.buf().last_edit_pos;
+                        let buf = self.buf_mut();
+                        buf.cursor = last_edit;
+                        if return_mode != Mode::Visual {
+                            buf.anchor = buf.cursor;
+                        }
+                    }
+                    KeyCode::Esc => {}
+                    _ => {}
                 }
                 self.mode = return_mode;
             }

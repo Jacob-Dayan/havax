@@ -17,6 +17,7 @@ pub struct Buffer {
     pub tree: Option<tree_sitter::Tree>,
     pub language: Option<String>,
     pub needs_reparse: bool,
+    pub last_edit_pos: Position,
 }
 
 pub fn get_matching_pair(delim: char) -> (char, char) {
@@ -59,9 +60,29 @@ impl Buffer {
             tree: None,
             language: None,
             needs_reparse: true,
+            last_edit_pos: Position { row: 0, col: 0 },
         };
         buf.reparse();
         Ok(buf)
+    }
+
+    pub fn get_word_at_cursor(&self) -> String {
+        let row = self.cursor.row;
+        if row >= self.lines.len() {
+            return String::new();
+        }
+        let line = &self.lines[row];
+        let chars: Vec<char> = line.chars().collect();
+        let col = self.cursor.col.min(chars.len());
+        let mut start = col;
+        while start > 0 && (chars[start - 1].is_alphanumeric() || chars[start - 1] == '_') {
+            start -= 1;
+        }
+        let mut end = col;
+        while end < chars.len() && (chars[end].is_alphanumeric() || chars[end] == '_') {
+            end += 1;
+        }
+        chars[start..end].iter().collect()
     }
 
     pub fn language(&self) -> &str {

@@ -272,7 +272,29 @@ hidden = false
 - **Standard Type Associated Functions & Methods**: Added full associated function and method catalogs to `get_scoped_rust_completions` for standard types including `String::` (`new`, `from`, `with_capacity`, `from_utf8`, `from_utf8_lossy`, `from_utf8_unchecked`, `from_utf16`, `default`), `Vec::`, `Option::`, `Result::`, `HashMap::`, `HashSet::`, `BTreeMap`, `BTreeSet`, `Path::`, `PathBuf::`, `File::`, `Command::`, `Arc::`, `Mutex::`, `Duration::`, `Instant::`, `std::mem::`, `std::ptr::`, `std::iter::`, etc.
 - **Tree-sitter AST Scoped Symbols**: Implemented `extract_tree_sitter_scoped_symbols()` to inspect the active buffer's AST for `impl <Type>` blocks, `enum <Name>` variants, and `mod <name>` items so user-defined types (e.g. `MyService::start_service()`, `Status::Active`) provide instant scoped completion.
 - **Dot Operator (`.`) Method Completion**: Added `get_method_completions()` to provide contextual method completions for expressions like `s.` (string methods), `vec.` (vector/slice methods), `path.` (filesystem methods), `opt.` (option/result methods), `iter.` (iterator combinators), and user `impl` methods.
-- **Continuous Async LSP Completion Dispatch**: Ensured `lsp.request_completion()` is proactively dispatched for all scoped `::`, dot `.`, and identifier prefixes, asynchronously merging dynamic rust-analyzer completions with static and AST candidates.
+### Phase 18 — Helix Goto Table & Precise Completion Scoping
+- **Helix Goto Table Overlay (`g`)**: Implemented the complete Helix Goto table overlay matching Helix 1:1, rendering a centered popup menu with all navigation targets:
+  - `g`: Start of file / line start
+  - `e`: End of file / last line
+  - `f`: File under cursor
+  - `h`: Start of line
+  - `l`: End of line
+  - `s`: First non-blank character
+  - `t`: Top of screen
+  - `c`: Middle of screen
+  - `b`: Bottom of screen
+  - `d`: Definition (`textDocument/definition` with buffer fallback)
+  - `y`: Type definition (`textDocument/typeDefinition`)
+  - `i`: Implementation (`textDocument/implementation`)
+  - `r`: Reference (`textDocument/references`)
+  - `a`: Last accessed / alternate buffer
+  - `m`: Last modified buffer
+  - `n`: Next buffer
+  - `p`: Previous buffer
+  - `.`: Last modification position
+  - `Esc`: Cancel goto menu and return to previous mode
+- **Idle / Whitespace Inline Suggestion Suppression**: Fixed completion triggers so that when cursor is on whitespace or an empty line without an active word prefix or trigger character (`::`, `.`), the completion menu is explicitly closed and suppressed, preventing random keyword completions (`async`, `const`, etc.) from showing up while idle.
+- **Helix-Aligned LSP Capabilities**: Enhanced LSP client handshake with `workspaceFolders` and complete client capabilities matching Helix, allowing seamless `textDocument/definition`, `completion` context with `triggerCharacter`, and asynchronous request tracking (`active_completion_req`).
 
 ---
 
@@ -282,7 +304,7 @@ hidden = false
 cargo test
 ```
 
-48 tests covering:
+50 tests covering:
 - CLI argument parsing and `-a` directory scanning
 - TOML configuration deserialization & Havax config path resolution
 - All command-mode commands (`:new`, `:w`, `:wa`, `:pwd`, `:cd`, `:set-language`, `:config-open`, `:config-reload`)
@@ -290,6 +312,8 @@ cargo test
 - Visual mode motions (`vgl`)
 - Word/back-word motions with selection marking
 - Match mode (brackets, surround, select around/inside)
+- Helix Goto table popup overlay and all goto actions (`gs`, `gh`, `gl`, `gg`, `ge`, `ga`, `gm`, `g.`, `gd`, `gf`, `gn`, `gp`)
+- Idle / whitespace completion suppression (no unwanted popups on idle)
 - Tree-sitter syntax highlighting accuracy (Rust and TOML)
 - LSP diagnostics and completion triggering (Rust and TOML)
 - Real-time background LSP diagnostic & completion reactivity
@@ -305,3 +329,4 @@ cargo test
 - Built-in auto-import insertion on completion acceptance
 - Live syntax highlighting reparse and deletion stability
 - Bufferline persistence during and after command execution
+

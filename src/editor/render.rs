@@ -423,6 +423,15 @@ impl Editor {
             Self::render_match_menu(&mut self.stdout, &self.theme, cur_screen_x, cur_screen_y, cols, rows)?;
         }
 
+        // --- Render Helix Goto Menu Overlay if active ---
+        if self.mode == Mode::Goto {
+            let cur_buf = &self.buffers[self.current_buffer];
+            let cur_screen_x = gutter_width + cur_buf.cursor.col.saturating_sub(cur_buf.scroll_col);
+            let cur_screen_y =
+                content_start_y as usize + cur_buf.cursor.row.saturating_sub(cur_buf.scroll_row);
+            Self::render_goto_menu(&mut self.stdout, &self.theme, cur_screen_x, cur_screen_y, cols, rows)?;
+        }
+
         // --- Render Helix Directory / File Picker Overlay if active ---
         if let Some(picker) = &self.file_picker {
             Self::render_file_picker(&mut self.stdout, &self.theme, picker, cols, rows)?;
@@ -526,6 +535,91 @@ impl Editor {
 
         // Bottom Border
         execute!(stdout, cursor::MoveTo(x as u16, (y + 7) as u16))?;
+        execute!(stdout, SetBackgroundColor(bg), SetForegroundColor(border_fg))?;
+        write!(stdout, "└{}┘", "─".repeat(inner_w))?;
+
+        Ok(())
+    }
+
+    fn render_goto_menu(
+        stdout: &mut Stdout,
+        _theme: &Theme,
+        cursor_x: usize,
+        cursor_y: usize,
+        cols: u16,
+        rows: u16,
+    ) -> Result<(), Box<dyn Error>> {
+        let items = [
+            ("g", "Start of file"),
+            ("e", "End of file"),
+            ("f", "File under cursor"),
+            ("h", "Start of line"),
+            ("l", "End of line"),
+            ("s", "First non-blank char"),
+            ("t", "Top of screen"),
+            ("c", "Middle of screen"),
+            ("b", "Bottom of screen"),
+            ("d", "Definition"),
+            ("y", "Type definition"),
+            ("i", "Implementation"),
+            ("r", "Reference"),
+            ("a", "Last accessed file"),
+            ("m", "Last modified file"),
+            ("n", "Next buffer"),
+            ("p", "Previous buffer"),
+            (".", "Last modification"),
+        ];
+
+        let menu_width = 36;
+        let menu_height = items.len() + 2;
+        let x = cursor_x.min((cols as usize).saturating_sub(menu_width + 2)).max(2);
+        let y = if cursor_y + menu_height + 2 < rows as usize {
+            cursor_y + 1
+        } else if cursor_y > menu_height {
+            cursor_y.saturating_sub(menu_height + 1)
+        } else {
+            1
+        };
+
+        let inner_w = menu_width.saturating_sub(2);
+
+        // Top Border with Title ┌Goto───...─┐
+        execute!(stdout, cursor::MoveTo(x as u16, y as u16))?;
+        let bg = Color::Rgb { r: 38, g: 42, b: 58 };
+        let border_fg = Color::Rgb { r: 160, g: 170, b: 200 };
+        let key_fg = Color::Rgb { r: 240, g: 242, b: 250 };
+        let desc_fg = Color::Rgb { r: 180, g: 190, b: 215 };
+
+        execute!(stdout, SetBackgroundColor(bg), SetForegroundColor(border_fg))?;
+        let title = "Goto";
+        let dashes = inner_w.saturating_sub(title.len());
+        write!(stdout, "┌{title}{}┐", "─".repeat(dashes))?;
+
+        // Rows
+        for (i, (key, desc)) in items.iter().enumerate() {
+            let row_y = y + 1 + i;
+            if row_y >= (rows as usize).saturating_sub(1) {
+                break;
+            }
+            execute!(stdout, cursor::MoveTo(x as u16, row_y as u16))?;
+            execute!(stdout, SetBackgroundColor(bg), SetForegroundColor(border_fg))?;
+            write!(stdout, "│")?;
+
+            execute!(stdout, SetForegroundColor(key_fg))?;
+            write!(stdout, " {key}  ")?;
+
+            execute!(stdout, SetForegroundColor(desc_fg))?;
+            let written = 1 + key.len() + 2 + desc.len();
+            let pad = inner_w.saturating_sub(written);
+            write!(stdout, "{desc}{:<pad$}", "")?;
+
+            execute!(stdout, SetForegroundColor(border_fg))?;
+            write!(stdout, "│")?;
+        }
+
+        // Bottom Border
+        let bottom_y = (y + items.len() + 1).min((rows as usize).saturating_sub(1));
+        execute!(stdout, cursor::MoveTo(x as u16, bottom_y as u16))?;
         execute!(stdout, SetBackgroundColor(bg), SetForegroundColor(border_fg))?;
         write!(stdout, "└{}┘", "─".repeat(inner_w))?;
 
