@@ -26,7 +26,11 @@ pub struct EditorConfig {
         default,
         rename = "bufferline",
         alias = "buffer_line",
-        alias = "buffferline"
+        alias = "buffer-line",
+        alias = "buffferline",
+        alias = "tabbar",
+        alias = "tab_bar",
+        alias = "tab-bar"
     )]
     pub bufferline: Bufferline,
 
@@ -182,14 +186,33 @@ impl Config {
     }
 
     pub fn default_config_path() -> PathBuf {
+        // 1. Workspace-level config
+        let ws_dot_havax = PathBuf::from(".havax/config.toml");
+        if ws_dot_havax.exists() {
+            return ws_dot_havax;
+        }
+        let ws_dot_helix = PathBuf::from(".helix/config.toml");
+        if ws_dot_helix.exists() {
+            return ws_dot_helix;
+        }
+
+        // 2. User home config
         if let Ok(home) = std::env::var("HOME").or_else(|_| std::env::var("USERPROFILE")) {
             let config_havax = PathBuf::from(&home).join(".config/havax/config.toml");
             if config_havax.exists() {
                 return config_havax;
             }
+            let config_helix = PathBuf::from(&home).join(".config/helix/config.toml");
+            if config_helix.exists() {
+                return config_helix;
+            }
             let dot_havax = PathBuf::from(&home).join(".havax/config.toml");
             if dot_havax.exists() {
                 return dot_havax;
+            }
+            let dot_helix = PathBuf::from(&home).join(".helix/config.toml");
+            if dot_helix.exists() {
+                return dot_helix;
             }
         }
         Self::config_dir().join("config.toml")
@@ -200,15 +223,11 @@ impl Config {
             .map(PathBuf::from)
             .unwrap_or_else(Self::default_config_path);
 
-        if path.exists() {
-            if let Ok(content) = fs::read_to_string(&path) {
-                match toml::from_str::<Config>(&content) {
-                    Ok(cfg) => return cfg,
-                    Err(e) => {
-                        eprintln!("Warning: failed to parse {:?}: {e}. Using defaults.", path);
-                    }
-                }
-            }
+        if path.exists()
+            && let Ok(content) = fs::read_to_string(&path)
+            && let Ok(cfg) = toml::from_str::<Config>(&content)
+        {
+            return cfg;
         } else if custom_path.is_none() {
             // Write default config file for easy user customization
             let default_cfg = Self::default();
