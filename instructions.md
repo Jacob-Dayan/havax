@@ -98,7 +98,7 @@ The render pass uses `command_prefix` (when set) to generate the completion list
 ### LSP Integration
 `LspClient` in `lsp/mod.rs` spawns `rust-analyzer` as a child process, communicates via JSON-RPC over stdin/stdout, and stores diagnostics + completions in `Arc<Mutex<>>` for thread-safe background reading.
 
-Scoped completions (`std::fs::`, `std::io::`, etc.) are augmented by a built-in Rust standard library database in `get_scoped_rust_completions()`. This provides immediate completions even before rust-analyzer responds.
+Completions (`String::`, `std::fs::`, receiver methods `s.`, local structs, enums, etc.) are computed dynamically by `rust-analyzer` (via LSP JSON-RPC `textDocument/completion`) and the Tree-Sitter syntax tree node queries (`impl_item`, `function_item`, `struct_item`, `enum_item`, `trait_item`, `mod_item`), exactly matching Helix's architecture without manual code parsing.
 
 **Filtering**: Scoped completions use `starts_with` / `contains` (NOT fuzzy subsequence) to avoid false matches like `re` → `write`.
 
@@ -268,10 +268,10 @@ hidden = false
 
 ### Phase 16 — Configurable Auto-Format & Real-Time Background LSP Reactivity
 - **Configurable Auto-Format**: Added `auto-format` / `auto_format` under `[editor]` configuration (defaulting to `true`). When enabled, buffers are automatically formatted on write (`:w`, `:wa`, `:wqa`, etc.) using `rustfmt` (for Rust) or `taplo` (for TOML) with fallback.
-### Phase 17 — Associated Functions, Methods, Scoped Modules & AST Completion
-- **Standard Type Associated Functions & Methods**: Added full associated function and method catalogs to `get_scoped_rust_completions` for standard types including `String::` (`new`, `from`, `with_capacity`, `from_utf8`, `from_utf8_lossy`, `from_utf8_unchecked`, `from_utf16`, `default`), `Vec::`, `Option::`, `Result::`, `HashMap::`, `HashSet::`, `BTreeMap`, `BTreeSet`, `Path::`, `PathBuf::`, `File::`, `Command::`, `Arc::`, `Mutex::`, `Duration::`, `Instant::`, `std::mem::`, `std::ptr::`, `std::iter::`, etc.
-- **Tree-sitter AST Scoped Symbols**: Implemented `extract_tree_sitter_scoped_symbols()` to inspect the active buffer's AST for `impl <Type>` blocks, `enum <Name>` variants, and `mod <name>` items so user-defined types (e.g. `MyService::start_service()`, `Status::Active`) provide instant scoped completion.
-- **Dot Operator (`.`) Method Completion**: Added `get_method_completions()` to provide contextual method completions for expressions like `s.` (string methods), `vec.` (vector/slice methods), `path.` (filesystem methods), `opt.` (option/result methods), `iter.` (iterator combinators), and user `impl` methods.
+### Phase 17 — Dynamic Tree-Sitter AST & rust-analyzer Scoped & Method Completions
+- **Dynamic Tree-sitter AST Scoped Symbols**: Implemented `extract_tree_sitter_scoped_symbols()` to inspect the active buffer's AST for `impl <Type>` blocks, `enum <Name>` variants, `trait` definitions, and `mod <name>` items so user-defined types (e.g. `Engine::new()`, `State::Idle`) provide instant scoped completion directly from the syntax tree.
+- **Tree-Sitter Method Completion**: Implemented `extract_tree_sitter_methods()` to dynamically extract receiver methods and `impl` functions from the AST.
+- **Rust-Analyzer JSON-RPC Completion**: Dispatches `textDocument/completion` requests to `rust-analyzer` with trigger characters (`:`, `.`) to obtain full type-inferred methods, submodules, and standard library completions.
 ### Phase 18 — Helix Goto Table & Precise Completion Scoping
 - **Helix Goto Table Overlay (`g`)**: Implemented the complete Helix Goto table overlay matching Helix 1:1, rendering a centered popup menu with all navigation targets:
   - `g`: Start of file / line start

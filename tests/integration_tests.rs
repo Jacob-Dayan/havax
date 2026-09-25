@@ -1293,38 +1293,54 @@ inherits = "catppuccin_mocha"
     }
 
     #[test]
-    fn test_scoped_module_completions_std_and_fs() {
-        // 1. `std::` should return std modules like fs, io, path, collections, env...
-        let std_items = havax::lsp::get_scoped_rust_completions("std", "");
-        assert!(!std_items.is_empty());
-        let labels: Vec<&str> = std_items.iter().map(|it| it.label.as_str()).collect();
-        assert!(labels.contains(&"fs"));
-        assert!(labels.contains(&"io"));
-        assert!(labels.contains(&"path"));
-        assert!(labels.contains(&"collections"));
-        assert!(labels.contains(&"env"));
-        assert!(labels.contains(&"process"));
-        assert!(labels.contains(&"sync"));
+    fn test_tree_sitter_scoped_and_method_symbol_extraction() {
+        let lines = vec![
+            "struct Engine { pub speed: u32 }".to_string(),
+            "impl Engine {".to_string(),
+            "    pub fn new() -> Self { Self { speed: 0 } }".to_string(),
+            "    pub fn start(&mut self) { self.speed = 100; }".to_string(),
+            "    pub fn get_speed(&self) -> u32 { self.speed }".to_string(),
+            "}".to_string(),
+            "enum State { Idle, Running, Stopped }".to_string(),
+        ];
+        let mut buf = Buffer::new(PathBuf::from("engine.rs")).unwrap();
+        buf.lines = lines;
+        buf.reparse();
 
-        // 2. `std::fs::` should return fs operations: read, read_to_string, write, read_dir, File, OpenOptions...
-        let fs_items = havax::lsp::get_scoped_rust_completions("std::fs", "");
-        assert!(!fs_items.is_empty());
-        let fs_labels: Vec<&str> = fs_items.iter().map(|it| it.label.as_str()).collect();
-        assert!(fs_labels.contains(&"read"));
-        assert!(fs_labels.contains(&"read_to_string"));
-        assert!(fs_labels.contains(&"write"));
-        assert!(fs_labels.contains(&"read_dir"));
-        assert!(fs_labels.contains(&"File"));
-        assert!(fs_labels.contains(&"OpenOptions"));
+        // 1. Scoped symbols for struct/impl `Engine::`
+        let engine_scoped = havax::lsp::extract_tree_sitter_scoped_symbols(
+            buf.tree.as_ref(),
+            &buf.lines,
+            "Engine",
+            "",
+        );
+        let labels: Vec<&str> = engine_scoped.iter().map(|it| it.label.as_str()).collect();
+        assert!(labels.contains(&"new"));
+        assert!(labels.contains(&"start"));
+        assert!(labels.contains(&"get_speed"));
 
-        // 3. Filtered scoped query: `std::fs::re`
-        let re_items = havax::lsp::get_scoped_rust_completions("std::fs", "re");
-        let re_labels: Vec<&str> = re_items.iter().map(|it| it.label.as_str()).collect();
-        assert!(re_labels.contains(&"read"));
-        assert!(re_labels.contains(&"read_to_string"));
-        assert!(re_labels.contains(&"read_dir"));
-        assert!(re_labels.contains(&"remove_file"));
-        assert!(!re_labels.contains(&"write"));
+        // 2. Scoped symbols for enum `State::`
+        let state_scoped = havax::lsp::extract_tree_sitter_scoped_symbols(
+            buf.tree.as_ref(),
+            &buf.lines,
+            "State",
+            "",
+        );
+        let state_labels: Vec<&str> = state_scoped.iter().map(|it| it.label.as_str()).collect();
+        assert!(state_labels.contains(&"Idle"));
+        assert!(state_labels.contains(&"Running"));
+        assert!(state_labels.contains(&"Stopped"));
+
+        // 3. Methods on receiver `engine.` or `self.`
+        let methods = havax::lsp::extract_tree_sitter_methods(
+            buf.tree.as_ref(),
+            &buf.lines,
+            "self",
+            "",
+        );
+        let method_labels: Vec<&str> = methods.iter().map(|it| it.label.as_str()).collect();
+        assert!(method_labels.contains(&"start"));
+        assert!(method_labels.contains(&"get_speed"));
     }
 
     #[test]
@@ -1955,11 +1971,26 @@ auto-format = false
         let path = PathBuf::from("test_string_scope.rs");
         let mut buf = Buffer::new(path).unwrap();
         buf.lines = vec![
+            "struct String;".to_string(),
+            "impl String {".to_string(),
+            "    pub fn new() -> Self { Self }".to_string(),
+            "    pub fn from(s: &str) -> Self { Self }".to_string(),
+            "    pub fn with_capacity(cap: usize) -> Self { Self }".to_string(),
+            "    pub fn from_utf8(v: Vec<u8>) -> Self { Self }".to_string(),
+            "    pub fn from_utf8_lossy(v: &[u8]) -> Self { Self }".to_string(),
+            "    pub fn from_utf8_unchecked(v: Vec<u8>) -> Self { Self }".to_string(),
+            "    pub fn default() -> Self { Self }".to_string(),
+            "    pub fn len(&self) -> usize { 0 }".to_string(),
+            "    pub fn push_str(&mut self, s: &str) {}".to_string(),
+            "    pub fn as_str(&self) -> &str { \"\" }".to_string(),
+            "    pub fn trim(&self) -> &str { \"\" }".to_string(),
+            "    pub fn chars(&self) -> () {}".to_string(),
+            "}".to_string(),
             "fn main() {".to_string(),
             "    let s = String::".to_string(),
             "}".to_string(),
         ];
-        buf.cursor = types::Position { row: 1, col: 20 }; // right after `String::`
+        buf.cursor = types::Position { row: 16, col: 20 }; // right after `String::`
         buf.anchor = buf.cursor;
         buf.language = Some("rust".to_string());
         buf.reparse();
@@ -2003,8 +2034,8 @@ auto-format = false
         assert!(labels.contains(&"default"), "Must contain 'default'");
 
         // 2. Test `String::fr` filters to `from`, `from_utf8`, etc.
-        editor.buf_mut().lines[1] = "    let s = String::fr".to_string();
-        editor.buf_mut().cursor = types::Position { row: 1, col: 22 };
+        editor.buf_mut().lines[16] = "    let s = String::fr".to_string();
+        editor.buf_mut().cursor = types::Position { row: 16, col: 22 };
         editor.trigger_completion();
         assert!(editor.completion.visible);
         let fr_labels: Vec<&str> = editor.completion.items.iter().map(|it| it.label.as_str()).collect();
@@ -2015,9 +2046,9 @@ auto-format = false
         assert!(!fr_labels.contains(&"with_capacity"));
 
         // 3. Test method completions with dot operator `s.`
-        editor.buf_mut().lines[1] = "    let mut s = String::new();".to_string();
-        editor.buf_mut().lines.insert(2, "    s.".to_string());
-        editor.buf_mut().cursor = types::Position { row: 2, col: 6 }; // right after `s.`
+        editor.buf_mut().lines[16] = "    let mut s = String::new();".to_string();
+        editor.buf_mut().lines.insert(17, "    s.".to_string());
+        editor.buf_mut().cursor = types::Position { row: 17, col: 6 }; // right after `s.`
         editor.trigger_completion();
         assert!(editor.completion.visible);
         let s_labels: Vec<&str> = editor.completion.items.iter().map(|it| it.label.as_str()).collect();

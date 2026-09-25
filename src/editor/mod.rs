@@ -300,68 +300,83 @@ impl Editor {
         if self.buf().needs_reparse || self.buf().tree.is_none() {
             self.buf_mut().reparse();
         }
-        let buf = self.buf();
-        let row = buf.cursor.row;
-        let col = buf.cursor.col;
-        if row >= buf.lines.len() {
-            self.completion.close();
-            return;
-        }
+        let (path, row, _col, is_rust, is_toml, lines, cur_col, filter_start, filter_prefix, scope_path, dot_call) = {
+            let buf = self.buf();
+            let row = buf.cursor.row;
+            let col = buf.cursor.col;
+            if row >= buf.lines.len() {
+                return;
+            }
 
-        let is_rust = buf.language() == "rust";
-        let is_toml = buf.language() == "toml";
+            let is_rust = buf.language() == "rust";
+            let is_toml = buf.language() == "toml";
 
-        let line = &buf.lines[row];
-        let chars: Vec<char> = line.chars().collect();
-        let cur_col = col.min(chars.len());
+            let line = &buf.lines[row];
+            let chars: Vec<char> = line.chars().collect();
+            let cur_col = col.min(chars.len());
 
-        // Check for scoped path ending before cursor, e.g. "String::", "std::fs::", "collections::" (Rust only)
-        let mut scope_path = None;
-        let mut dot_call = None;
-        let mut filter_start = cur_col;
-        while filter_start > 0
-            && (chars[filter_start - 1].is_alphanumeric()
-                || chars[filter_start - 1] == '_'
-                || (is_toml && chars[filter_start - 1] == '-'))
-        {
-            filter_start -= 1;
-        }
-        let filter_prefix: String = chars[filter_start..cur_col].iter().collect();
+            // Check for scoped path ending before cursor, e.g. "String::", "std::fs::", "collections::" (Rust only)
+            let mut scope_path = None;
+            let mut dot_call = None;
+            let mut filter_start = cur_col;
+            while filter_start > 0
+                && (chars[filter_start - 1].is_alphanumeric()
+                    || chars[filter_start - 1] == '_'
+                    || (is_toml && chars[filter_start - 1] == '-'))
+            {
+                filter_start -= 1;
+            }
+            let filter_prefix: String = chars[filter_start..cur_col].iter().collect();
 
-        if is_rust
-            && filter_start >= 2
-            && chars[filter_start - 1] == ':'
-            && chars[filter_start - 2] == ':'
-        {
-            // Find scope before '::'
-            let mut scope_start = filter_start - 2;
-            while scope_start > 0 {
-                let prev_ch = chars[scope_start - 1];
-                if prev_ch.is_alphanumeric() || prev_ch == '_' || prev_ch == ':' {
-                    scope_start -= 1;
-                } else {
-                    break;
+            if is_rust
+                && filter_start >= 2
+                && chars[filter_start - 1] == ':'
+                && chars[filter_start - 2] == ':'
+            {
+                // Find scope before '::'
+                let mut scope_start = filter_start - 2;
+                while scope_start > 0 {
+                    let prev_ch = chars[scope_start - 1];
+                    if prev_ch.is_alphanumeric() || prev_ch == '_' || prev_ch == ':' {
+                        scope_start -= 1;
+                    } else {
+                        break;
+                    }
+                }
+                let raw_scope: String = chars[scope_start..filter_start - 2].iter().collect();
+                if !raw_scope.is_empty() {
+                    scope_path = Some(raw_scope);
+                }
+            } else if is_rust && filter_start >= 1 && chars[filter_start - 1] == '.' {
+                // Find receiver before '.'
+                let mut receiver_end = filter_start - 1;
+                while receiver_end > 0 && chars[receiver_end - 1].is_whitespace() {
+                    receiver_end -= 1;
+                }
+                let mut receiver_start = receiver_end;
+                while receiver_start > 0 && (chars[receiver_start - 1].is_alphanumeric() || chars[receiver_start - 1] == '_') {
+                    receiver_start -= 1;
+                }
+                let receiver: String = chars[receiver_start..receiver_end].iter().collect();
+                if !receiver.is_empty() {
+                    dot_call = Some(receiver);
                 }
             }
-            let raw_scope: String = chars[scope_start..filter_start - 2].iter().collect();
-            if !raw_scope.is_empty() {
-                scope_path = Some((raw_scope, filter_start, filter_prefix.clone()));
-            }
-        } else if is_rust && filter_start >= 1 && chars[filter_start - 1] == '.' {
-            // Find receiver before '.'
-            let mut receiver_end = filter_start - 1;
-            while receiver_end > 0 && chars[receiver_end - 1].is_whitespace() {
-                receiver_end -= 1;
-            }
-            let mut receiver_start = receiver_end;
-            while receiver_start > 0 && (chars[receiver_start - 1].is_alphanumeric() || chars[receiver_start - 1] == '_') {
-                receiver_start -= 1;
-            }
-            let receiver: String = chars[receiver_start..receiver_end].iter().collect();
-            if !receiver.is_empty() {
-                dot_call = Some((receiver, filter_start, filter_prefix.clone()));
-            }
-        }
+
+            (
+                buf.path.clone(),
+                row,
+                col,
+                is_rust,
+                is_toml,
+                buf.lines.clone(),
+                cur_col,
+                filter_start,
+                filter_prefix,
+                scope_path,
+                dot_call,
+            )
+        };
 
         if scope_path.is_none() && dot_call.is_none() && filter_prefix.is_empty() {
             self.completion.close();
@@ -371,65 +386,97 @@ impl Editor {
         let is_scope = scope_path.is_some();
         let is_dot = dot_call.is_some();
 
-        let (trigger_col, display_prefix, mut items) = if let Some((scope, f_start, f_prefix)) =
-            scope_path
-        {
-            let mut scoped_items = crate::lsp::get_scoped_rust_completions(&scope, &f_prefix);
+        let trigger_col = filter_start;
+        let mut items = Vec::new();
+
+        // 1. Language Server (rust-analyzer / taplo): Primary source of completions
+        let lsp_client = if is_rust {
+            self.lsp.as_ref()
+        } else if is_toml {
+            self.toml_lsp.as_ref()
+        } else {
+            None
+        };
+
+        if let Some(lsp) = lsp_client {
+            let trigger_char = if is_scope {
+                Some(':')
+            } else if is_dot {
+                Some('.')
+            } else {
+                None
+            };
+            let req_id = lsp.request_completion(&path, row, cur_col, trigger_char);
+            self.active_completion_req = req_id;
+            if let Some(lsp_items) = lsp.get_completions_for(req_id) {
+                for item in lsp_items {
+                    if !items.iter().any(|it: &crate::lsp::CompletionItem| it.label == item.label) {
+                        items.push(item);
+                    }
+                }
+            }
+        }
+
+        // 2. Tree-Sitter AST symbol extraction
+        let tree_ref = self.buf().tree.as_ref();
+        if let Some(scope) = &scope_path {
             let ast_scoped = crate::lsp::extract_tree_sitter_scoped_symbols(
-                buf.tree.as_ref(),
-                &buf.lines,
-                &scope,
-                &f_prefix,
+                tree_ref,
+                &lines,
+                scope,
+                &filter_prefix,
             );
             for item in ast_scoped {
-                if !scoped_items.iter().any(|it| it.label == item.label) {
-                    scoped_items.push(item);
+                if !items.iter().any(|it| it.label == item.label) {
+                    items.push(item);
                 }
             }
-            (f_start, f_prefix, scoped_items)
-        } else if let Some((receiver, f_start, f_prefix)) = dot_call {
-            let mut method_items = crate::lsp::extract_tree_sitter_methods(
-                buf.tree.as_ref(),
-                &buf.lines,
-                &receiver,
-                &f_prefix,
+        } else if let Some(receiver) = &dot_call {
+            let ast_methods = crate::lsp::extract_tree_sitter_methods(
+                tree_ref,
+                &lines,
+                receiver,
+                &filter_prefix,
             );
-            for item in crate::lsp::get_method_completions(&receiver, &f_prefix) {
-                if !method_items.iter().any(|it| it.label == item.label) {
-                    method_items.push(item);
+            for item in ast_methods {
+                if !items.iter().any(|it| it.label == item.label) {
+                    items.push(item);
                 }
             }
-            (f_start, f_prefix, method_items)
         } else if !filter_prefix.is_empty() {
-            let mut general_items = if is_rust {
-                crate::lsp::get_standard_rust_completions(&filter_prefix)
-            } else if is_toml {
-                crate::lsp::get_standard_toml_completions(&filter_prefix)
-            } else {
-                Vec::new()
-            };
-
-            // Add Tree-sitter AST symbols from buffer
             let ast_symbols = crate::lsp::extract_tree_sitter_symbols(
-                buf.tree.as_ref(),
-                &buf.lines,
+                tree_ref,
+                &lines,
                 &filter_prefix,
             );
             for sym in ast_symbols {
-                if !general_items.iter().any(|it| it.label == sym.label) {
-                    general_items.push(sym);
+                if !items.iter().any(|it| it.label == sym.label) {
+                    items.push(sym);
                 }
             }
 
-            // Also add buffer words
-            for (r_idx, l) in buf.lines.iter().enumerate() {
+            // Fallback standard symbols & keywords
+            if is_rust {
+                for item in crate::lsp::get_standard_rust_completions(&filter_prefix) {
+                    if !items.iter().any(|it| it.label == item.label) {
+                        items.push(item);
+                    }
+                }
+            } else if is_toml {
+                for item in crate::lsp::get_standard_toml_completions(&filter_prefix) {
+                    if !items.iter().any(|it| it.label == item.label) {
+                        items.push(item);
+                    }
+                }
+            }
+            for (r_idx, l) in lines.iter().enumerate() {
                 for word in l.split(|c: char| !c.is_alphanumeric() && c != '_' && c != '-') {
                     if !word.is_empty()
                         && word != filter_prefix
-                        && !general_items.iter().any(|it| it.label == word)
+                        && !items.iter().any(|it| it.label == word)
                         && crate::lsp::fuzzy_match_score(&filter_prefix, word).is_some()
                     {
-                        general_items.push(crate::lsp::CompletionItem {
+                        items.push(crate::lsp::CompletionItem {
                             label: word.to_string(),
                             detail: None,
                             kind_name: if is_toml {
@@ -444,39 +491,10 @@ impl Editor {
                     }
                 }
             }
-            (filter_start, filter_prefix, general_items)
-        } else {
-            (0, String::new(), Vec::new())
-        };
-
-        let lsp_client = if is_rust {
-            self.lsp.as_ref()
-        } else if is_toml {
-            self.toml_lsp.as_ref()
-        } else {
-            None
-        };
-        if let Some(lsp) = lsp_client {
-            let trigger_char = if is_scope {
-                Some(':')
-            } else if is_dot {
-                Some('.')
-            } else {
-                None
-            };
-            let req_id = lsp.request_completion(&buf.path, row, cur_col, trigger_char);
-            self.active_completion_req = req_id;
-            if let Some(lsp_items) = lsp.get_completions_for(req_id) {
-                for item in lsp_items {
-                    if !items.iter().any(|it| it.label == item.label) {
-                        items.insert(0, item);
-                    }
-                }
-            }
         }
 
         if !items.is_empty() {
-            self.completion.show(trigger_col, &display_prefix, items);
+            self.completion.show(trigger_col, &filter_prefix, items);
         } else {
             self.completion.close();
         }
