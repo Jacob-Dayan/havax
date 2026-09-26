@@ -1,11 +1,17 @@
 use std::error::Error;
-use std::io::{Stdout, Write};
 
 use crossterm::{
-    cursor::{self, SetCursorStyle},
+    cursor::SetCursorStyle,
     execute,
-    style::{Color, SetBackgroundColor, SetForegroundColor},
-    terminal::size,
+};
+
+use ratatui::{
+    backend::CrosstermBackend,
+    layout::{Constraint, Direction, Layout, Position, Rect},
+    style::{Color as RatColor, Modifier, Style},
+    text::{Line, Span, Text},
+    widgets::{Block, BorderType, Borders, Clear, Paragraph},
+    Frame, Terminal,
 };
 
 use super::Editor;
@@ -13,35 +19,19 @@ use crate::config::{Bufferline, CursorShape, LineNumber};
 use crate::syntax::{highlight_line_treesitter, tokenize_preview_line};
 use crate::types::Mode;
 use crate::ui::picker::FilePicker;
-use crate::ui::theme::Theme;
+use crate::ui::theme::{to_ratatui_color, Theme};
 
 impl Editor {
     pub fn render(&mut self) -> Result<(), Box<dyn Error>> {
-        let (cols, rows) = size()?;
-
-        let show_tab_bar = match self.config.editor.bufferline {
-            Bufferline::Always => true,
-            Bufferline::Multiple => self.buffers.len() > 1,
-            Bufferline::Never => false,
-        };
-
-        let content_start_y: u16 = if show_tab_bar { 1 } else { 0 };
-        let content_rows = (rows.saturating_sub(if show_tab_bar { 2 } else { 1 }) as usize).max(1);
-
-        let buf = self.buf_mut();
-        let max_digits = buf.lines.len().max(1).to_string().len().max(2);
-        let gutter_width = 2 + max_digits + 2; // marker (2) + line number (max_digits) + space (2)
-        let content_cols = (cols as usize).saturating_sub(gutter_width);
-
-        buf.adjust_scroll(content_rows, content_cols);
-
-        // Update cursor style
         let shape = match self.mode {
             Mode::Insert => self.config.editor.cursor_shape.insert,
             Mode::Normal => self.config.editor.cursor_shape.normal,
-            Mode::Visual | Mode::Goto | Mode::Match | Mode::Command | Mode::Leader => {
-                self.config.editor.cursor_shape.select
-            }
+            Mode::Visual
+            | Mode::Goto
+            | Mode::Match
+            | Mode::Command
+            | Mode::Leader
+            | Mode::Replace => self.config.editor.cursor_shape.select,
         };
         let cursor_style = match shape {
             CursorShape::Bar => SetCursorStyle::SteadyBar,
@@ -50,50 +40,20 @@ impl Editor {
         };
         execute!(self.stdout, cursor_style)?;
 
-        execute!(self.stdout, cursor::Hide)?;
+        let show_tab_bar = match self.config.editor.bufferline {
+            Bufferline::Always => true,
+            Bufferline::Multiple => self.buffers.len() > 1,
+            Bufferline::Never => false,
+        };
 
-        if show_tab_bar {
-            execute!(self.stdout, cursor::MoveTo(0, 0))?;
-            let mut tab_x = 0;
-            for (i, b) in self.buffers.iter().enumerate() {
-                let fname = b
-                    .path
-                    .file_name()
-                    .unwrap_or(b.path.as_os_str())
-                    .to_string_lossy();
-                let display_title = if fname.is_empty() || fname == "scratch" {
-                    "[scratch]"
-                } else {
-                    &fname
-                };
-                let is_active = i == self.current_buffer;
-                let (bg, fg) = if is_active {
-                    (self.theme.badge_goto_bg, self.theme.badge_text)
-                } else {
-                    (self.theme.status_bg, self.theme.status_fg)
-                };
-                execute!(self.stdout, SetBackgroundColor(bg), SetForegroundColor(fg))?;
-                let mod_flag = if b.modified { " [+]" } else { "" };
-                let tab_text = format!(" {}: {display_title}{mod_flag} ", i + 1);
-                write!(self.stdout, "{tab_text}")?;
-                tab_x += tab_text.len();
-            }
-            if tab_x < cols as usize {
-                execute!(
-                    self.stdout,
-                    SetBackgroundColor(self.theme.status_bg),
-                    SetForegroundColor(self.theme.status_fg)
-                )?;
-                write!(
-                    self.stdout,
-                    "{:<width$}",
-                    "",
-                    width = (cols as usize) - tab_x
-                )?;
-            }
-        }
-
+        let (cols, rows) = crossterm::terminal::size()?;
         let current_buf = &mut self.buffers[self.current_buffer];
+        let max_digits = current_buf.lines.len().max(1).to_string().len().max(2);
+        let gutter_width = 2 + max_digits + 2;
+        let content_rows = (rows.saturating_sub(if show_tab_bar { 2 } else { 1 }) as usize).max(1);
+        let content_cols = (cols as usize).saturating_sub(gutter_width);
+        current_buf.adjust_scroll(content_rows, content_cols);
+
         if current_buf.needs_reparse || current_buf.tree.is_none() {
             current_buf.reparse();
         }
@@ -114,395 +74,425 @@ impl Editor {
         let diag_map: std::collections::HashMap<usize, &crate::lsp::Diagnostic> =
             diagnostics.iter().map(|d| (d.line, d)).collect();
 
-        for screen_y in 0..content_rows {
-            execute!(
-                self.stdout,
-                cursor::MoveTo(0, content_start_y + (screen_y as u16))
-            )?;
-            let file_row = current_buf.scroll_row + screen_y;
+        let backend = CrosstermBackend::new(&mut self.stdout);
+        let mut terminal = Terminal::new(backend)?;
 
-            if file_row < current_buf.lines.len() {
-                let is_current = file_row == current_buf.cursor.row;
-                let gutter_fg = if is_current {
-                    self.theme.current_line_gutter
-                } else {
-                    self.theme.gutter_fg
-                };
+        let theme = &self.theme;
+        let config = &self.config;
+        let buffers = &self.buffers;
+        let current_buffer = self.current_buffer;
+        let mode = self.mode;
+        let match_state = self.match_state;
+        let status_message = &self.status_message;
+        let file_picker = &self.file_picker;
+        let completion = &self.completion;
+        let command_buffer = &self.command_buffer;
+        let command_prefix = &self.command_prefix;
 
-                let diag_opt = diag_map.get(&file_row);
+        let cur_buf = &buffers[current_buffer];
+        let max_digits = cur_buf.lines.len().max(1).to_string().len().max(2);
+        let gutter_width = 2 + max_digits + 2;
 
-                // 1. Diagnostic marker in gutter (column 0-1)
-                if let Some(diag) = diag_opt {
-                    let marker_color = match diag.severity {
-                        crate::lsp::DiagnosticSeverity::Error => Color::Rgb {
-                            r: 247,
-                            g: 118,
-                            b: 142,
-                        },
-                        crate::lsp::DiagnosticSeverity::Warning => Color::Rgb {
-                            r: 224,
-                            g: 175,
-                            b: 104,
-                        },
-                        _ => Color::Rgb {
-                            r: 122,
-                            g: 162,
-                            b: 247,
-                        },
+        terminal.draw(|frame| {
+            let area = frame.area();
+            let constraints = if show_tab_bar {
+                vec![
+                    Constraint::Length(1),
+                    Constraint::Min(1),
+                    Constraint::Length(1),
+                ]
+            } else {
+                vec![
+                    Constraint::Min(1),
+                    Constraint::Length(1),
+                ]
+            };
+            let chunks = Layout::default()
+                .direction(Direction::Vertical)
+                .constraints(constraints)
+                .split(area);
+
+            let (tab_area, content_area, status_area) = if show_tab_bar {
+                (Some(chunks[0]), chunks[1], chunks[2])
+            } else {
+                (None, chunks[0], chunks[1])
+            };
+
+            let content_rows = content_area.height as usize;
+            let content_cols = (content_area.width as usize).saturating_sub(gutter_width);
+
+            if let Some(tab_area) = tab_area {
+                let mut spans = Vec::new();
+                for (i, b) in buffers.iter().enumerate() {
+                    let fname = b
+                        .path
+                        .file_name()
+                        .unwrap_or(b.path.as_os_str())
+                        .to_string_lossy();
+                    let display_title = if fname.is_empty() || fname == "scratch" {
+                        "[scratch]"
+                    } else {
+                        &fname
                     };
-                    execute!(
-                        self.stdout,
-                        SetBackgroundColor(self.theme.bg),
-                        SetForegroundColor(marker_color)
-                    )?;
-                    let marker_sym = match diag.severity {
-                        crate::lsp::DiagnosticSeverity::Warning => "▲ ",
-                        _ => "● ",
+                    let is_active = i == current_buffer;
+                    let (bg, fg) = if is_active {
+                        (to_ratatui_color(theme.badge_goto_bg), to_ratatui_color(theme.badge_text))
+                    } else {
+                        (to_ratatui_color(theme.status_bg), to_ratatui_color(theme.status_fg))
                     };
-                    write!(self.stdout, "{marker_sym}")?;
-                } else {
-                    execute!(
-                        self.stdout,
-                        SetBackgroundColor(self.theme.bg),
-                        SetForegroundColor(gutter_fg)
-                    )?;
-                    write!(self.stdout, "  ")?;
+                    let mod_flag = if b.modified { " [+]" } else { "" };
+                    let tab_text = format!(" {}: {display_title}{mod_flag} ", i + 1);
+                    let mut style = Style::default().bg(bg).fg(fg);
+                    if is_active {
+                        style = style.add_modifier(Modifier::BOLD);
+                    }
+                    spans.push(Span::styled(tab_text, style));
                 }
+                let p = Paragraph::new(Line::from(spans))
+                    .style(Style::default().bg(to_ratatui_color(theme.status_bg)));
+                frame.render_widget(p, tab_area);
+            }
 
-                // 2. Line number (width: max_digits) + 2 spaces gap
-                execute!(
-                    self.stdout,
-                    SetBackgroundColor(self.theme.bg),
-                    SetForegroundColor(gutter_fg)
-                )?;
+            let mut editor_lines = Vec::new();
+            for screen_y in 0..content_rows {
+                let file_row = cur_buf.scroll_row + screen_y;
+                if file_row < cur_buf.lines.len() {
+                    let is_current = file_row == cur_buf.cursor.row;
+                    let gutter_fg = if is_current {
+                        to_ratatui_color(theme.current_line_gutter)
+                    } else {
+                        to_ratatui_color(theme.gutter_fg)
+                    };
 
-                let is_relative = self.config.editor.line_number == LineNumber::Relative;
-                let num_str = if is_relative {
-                    if is_current {
+                    let diag_opt = diag_map.get(&file_row);
+                    let mut spans = Vec::new();
+
+                    if let Some(diag) = diag_opt {
+                        let marker_color = match diag.severity {
+                            crate::lsp::DiagnosticSeverity::Error => RatColor::Rgb(247, 118, 142),
+                            crate::lsp::DiagnosticSeverity::Warning => RatColor::Rgb(224, 175, 104),
+                            _ => RatColor::Rgb(122, 162, 247),
+                        };
+                        let marker_sym = match diag.severity {
+                            crate::lsp::DiagnosticSeverity::Warning => "▲ ",
+                            _ => "● ",
+                        };
+                        spans.push(Span::styled(
+                            marker_sym,
+                            Style::default()
+                                .fg(marker_color)
+                                .bg(to_ratatui_color(theme.bg)),
+                        ));
+                    } else {
+                        spans.push(Span::styled(
+                            "  ",
+                            Style::default()
+                                .fg(gutter_fg)
+                                .bg(to_ratatui_color(theme.bg)),
+                        ));
+                    }
+
+                    let is_relative = config.editor.line_number == LineNumber::Relative;
+                    let num_str = if is_relative {
+                        if is_current {
+                            format!("{}", file_row + 1)
+                        } else {
+                            format!("{}", file_row.abs_diff(cur_buf.cursor.row))
+                        }
+                    } else {
                         format!("{}", file_row + 1)
-                    } else {
-                        format!("{}", file_row.abs_diff(current_buf.cursor.row))
-                    }
-                } else {
-                    format!("{}", file_row + 1)
-                };
-
-                write!(self.stdout, "{:>width$}  ", num_str, width = max_digits)?;
-
-                // 3. Highlighted code tokens
-                let tokens = highlight_line_treesitter(
-                    current_buf.tree.as_ref(),
-                    Some(&current_buf.path),
-                    file_row,
-                    &current_buf.lines[file_row],
-                    &self.theme,
-                    current_buf.language(),
-                );
-
-                let line_len = tokens.len();
-                let mut col = current_buf.scroll_col;
-                let end_col = current_buf.scroll_col + content_cols;
-
-                while col < end_col && col < line_len {
-                    let (ch, fg) = tokens[col];
-                    let bg = if current_buf.is_selected(file_row, col) {
-                        self.theme.selection_bg
-                    } else {
-                        self.theme.bg
                     };
-                    execute!(self.stdout, SetBackgroundColor(bg), SetForegroundColor(fg))?;
-                    write!(self.stdout, "{ch}")?;
-                    col += 1;
-                }
 
-                // 4. Inline diagnostic error message (rendered right after code)
-                if let Some(diag) = diag_opt
-                    && col < end_col
-                {
-                    let gap = 2.min(end_col - col);
-                    if gap > 0 {
-                        execute!(
-                            self.stdout,
-                            SetBackgroundColor(self.theme.bg),
-                            SetForegroundColor(self.theme.fg)
-                        )?;
-                        write!(self.stdout, "{:<gap$}", "")?;
-                        col += gap;
-                    }
+                    spans.push(Span::styled(
+                        format!("{:>width$}  ", num_str, width = max_digits),
+                        Style::default()
+                            .fg(gutter_fg)
+                            .bg(to_ratatui_color(theme.bg)),
+                    ));
 
-                    let diag_fg = match diag.severity {
-                        crate::lsp::DiagnosticSeverity::Error => Color::Rgb {
-                            r: 247,
-                            g: 118,
-                            b: 142,
-                        },
-                        crate::lsp::DiagnosticSeverity::Warning => Color::Rgb {
-                            r: 224,
-                            g: 175,
-                            b: 104,
-                        },
-                        _ => Color::Rgb {
-                            r: 122,
-                            g: 162,
-                            b: 247,
-                        },
-                    };
-                    execute!(
-                        self.stdout,
-                        SetBackgroundColor(self.theme.bg),
-                        SetForegroundColor(diag_fg)
-                    )?;
+                    let tokens = highlight_line_treesitter(
+                        cur_buf.tree.as_ref(),
+                        Some(&cur_buf.path),
+                        file_row,
+                        &cur_buf.lines[file_row],
+                        theme,
+                        cur_buf.language(),
+                    );
 
-                    for ch in diag.message.chars().take(end_col.saturating_sub(col)) {
-                        write!(self.stdout, "{ch}")?;
+                    let line_len = tokens.len();
+                    let mut col = cur_buf.scroll_col;
+                    let end_col = cur_buf.scroll_col + content_cols;
+
+                    let mut cur_span_text = String::new();
+                    let mut cur_span_style = Style::default();
+
+                    while col < end_col && col < line_len {
+                        let (ch, fg) = tokens[col];
+                        let bg = if cur_buf.is_selected(file_row, col) {
+                            to_ratatui_color(theme.selection_bg)
+                        } else {
+                            to_ratatui_color(theme.bg)
+                        };
+                        let style = Style::default().fg(to_ratatui_color(fg)).bg(bg);
+                        if style == cur_span_style {
+                            cur_span_text.push(ch);
+                        } else {
+                            if !cur_span_text.is_empty() {
+                                spans.push(Span::styled(cur_span_text.clone(), cur_span_style));
+                                cur_span_text.clear();
+                            }
+                            cur_span_style = style;
+                            cur_span_text.push(ch);
+                        }
                         col += 1;
                     }
-                }
+                    if !cur_span_text.is_empty() {
+                        spans.push(Span::styled(cur_span_text, cur_span_style));
+                    }
 
-                // 5. Fill remaining space on this line
-                if col < end_col {
-                    execute!(
-                        self.stdout,
-                        SetBackgroundColor(self.theme.bg),
-                        SetForegroundColor(self.theme.fg)
-                    )?;
-                    let rem = end_col - col;
-                    write!(self.stdout, "{:<rem$}", "")?;
+                    if let Some(diag) = diag_opt
+                        && col < end_col
+                    {
+                        let gap = 2.min(end_col - col);
+                        if gap > 0 {
+                            spans.push(Span::styled(
+                                " ".repeat(gap),
+                                Style::default().bg(to_ratatui_color(theme.bg)),
+                            ));
+                            col += gap;
+                        }
+
+                        let diag_fg = match diag.severity {
+                            crate::lsp::DiagnosticSeverity::Error => RatColor::Rgb(247, 118, 142),
+                            crate::lsp::DiagnosticSeverity::Warning => RatColor::Rgb(224, 175, 104),
+                            _ => RatColor::Rgb(122, 162, 247),
+                        };
+
+                        let msg: String = diag
+                            .message
+                            .chars()
+                            .take(end_col.saturating_sub(col))
+                            .collect();
+                        col += msg.chars().count();
+                        spans.push(Span::styled(
+                            msg,
+                            Style::default()
+                                .fg(diag_fg)
+                                .bg(to_ratatui_color(theme.bg)),
+                        ));
+                    }
+
+                    if col < end_col {
+                        let rem = end_col - col;
+                        spans.push(Span::styled(
+                            " ".repeat(rem),
+                            Style::default().bg(to_ratatui_color(theme.bg)),
+                        ));
+                    }
+
+                    editor_lines.push(Line::from(spans));
+                } else {
+                    let mut spans = Vec::new();
+                    spans.push(Span::styled(
+                        "  ",
+                        Style::default().bg(to_ratatui_color(theme.bg)),
+                    ));
+                    spans.push(Span::styled(
+                        format!("{:>width$}  ", "~", width = max_digits),
+                        Style::default()
+                            .fg(to_ratatui_color(theme.gutter_fg))
+                            .bg(to_ratatui_color(theme.bg)),
+                    ));
+                    if content_cols > 0 {
+                        spans.push(Span::styled(
+                            " ".repeat(content_cols),
+                            Style::default().bg(to_ratatui_color(theme.bg)),
+                        ));
+                    }
+                    editor_lines.push(Line::from(spans));
                 }
-            } else {
-                execute!(
-                    self.stdout,
-                    SetBackgroundColor(self.theme.bg),
-                    SetForegroundColor(self.theme.gutter_fg)
-                )?;
-                write!(self.stdout, "  {:>width$}  ", "~", width = max_digits)?;
-                execute!(self.stdout, SetBackgroundColor(self.theme.bg))?;
-                write!(self.stdout, "{:<width$}", "", width = content_cols)?;
             }
-        }
 
-        let status_row = rows.saturating_sub(1);
-        execute!(self.stdout, cursor::MoveTo(0, status_row))?;
+            let editor_paragraph = Paragraph::new(Text::from(editor_lines))
+                .style(Style::default().bg(to_ratatui_color(theme.bg)));
+            frame.render_widget(editor_paragraph, content_area);
 
-        if self.mode == Mode::Command {
-            execute!(
-                self.stdout,
-                SetBackgroundColor(self.theme.badge_cmd_bg),
-                SetForegroundColor(self.theme.badge_text)
-            )?;
-            write!(self.stdout, " CMD ")?;
-            execute!(
-                self.stdout,
-                SetBackgroundColor(self.theme.status_bg),
-                SetForegroundColor(self.theme.status_fg)
-            )?;
-            let cmd_prompt = format!(" :{}", self.command_buffer);
-            let badge_width = 5;
-            let rem_width = (cols as usize).saturating_sub(badge_width + cmd_prompt.len());
-            write!(self.stdout, "{}{:<rem_width$}", cmd_prompt, "")?;
+            if mode == Mode::Command {
+                let badge_style = Style::default()
+                    .bg(to_ratatui_color(theme.badge_cmd_bg))
+                    .fg(to_ratatui_color(theme.badge_text))
+                    .add_modifier(Modifier::BOLD);
+                let text_style = Style::default()
+                    .bg(to_ratatui_color(theme.status_bg))
+                    .fg(to_ratatui_color(theme.status_fg));
 
-            execute!(
-                self.stdout,
-                cursor::MoveTo(
-                    (badge_width + 2 + self.command_buffer.len()) as u16,
-                    status_row
-                ),
-                cursor::Show
-            )?;
-        } else {
-            let (badge_bg, badge_name) = match self.mode {
-                Mode::Normal => (self.theme.badge_nor_bg, " NOR "),
-                Mode::Insert => (self.theme.badge_ins_bg, " INS "),
-                Mode::Visual => (self.theme.badge_goto_bg, " SEL "),
-                Mode::Goto => (self.theme.badge_goto_bg, " GOTO "),
-                Mode::Match => (self.theme.badge_goto_bg, " MATCH "),
-                Mode::Leader => (self.theme.badge_cmd_bg, " SPACE "),
-                Mode::Command => unreachable!(),
-            };
+                let cmd_prompt = format!(" :{}", command_buffer);
+                let badge_width = 5;
+                let rem_width = (status_area.width as usize).saturating_sub(badge_width + cmd_prompt.len());
 
-            execute!(
-                self.stdout,
-                SetBackgroundColor(badge_bg),
-                SetForegroundColor(self.theme.badge_text)
-            )?;
-            write!(self.stdout, "{badge_name}")?;
+                let status_line = Line::from(vec![
+                    Span::styled(" CMD ", badge_style),
+                    Span::styled(cmd_prompt, text_style),
+                    Span::styled(" ".repeat(rem_width), text_style),
+                ]);
+                let status_p = Paragraph::new(status_line)
+                    .style(Style::default().bg(to_ratatui_color(theme.status_bg)));
+                frame.render_widget(status_p, status_area);
 
-            execute!(
-                self.stdout,
-                SetBackgroundColor(self.theme.status_bg),
-                SetForegroundColor(self.theme.status_fg)
-            )?;
-
-            let cur_buf = &self.buffers[self.current_buffer];
-            let dirty_flag = if cur_buf.modified { " [+]" } else { "" };
-            let fname = cur_buf
-                .path
-                .file_name()
-                .unwrap_or(cur_buf.path.as_os_str())
-                .to_string_lossy();
-            let is_unnamed = cur_buf.path.as_os_str().is_empty() || fname == "scratch";
-            let lang_name = cur_buf.language();
-            let file_info = if is_unnamed {
-                if cur_buf.modified {
-                    format!(" [{lang_name}] [+]")
-                } else {
-                    format!(" [{lang_name}]")
-                }
+                let cursor_x = status_area.x + (badge_width + 2 + command_buffer.len()) as u16;
+                let cursor_y = status_area.y;
+                frame.set_cursor_position(Position::new(cursor_x, cursor_y));
             } else {
-                format!(" {} [{lang_name}]{dirty_flag}", cur_buf.path.display())
-            };
-
-            let sel_info = if cur_buf.anchor != cur_buf.cursor {
-                let (start, end) = cur_buf.selection_bounds();
-                if start.row == end.row {
-                    format!(" [sel: {}ch]", end.col.saturating_sub(start.col))
-                } else {
-                    format!(" [sel: {}L]", end.row - start.row + 1)
-                }
-            } else {
-                String::new()
-            };
-
-            let right_info = format!(
-                "1 sel  {}:{} ",
-                cur_buf.cursor.row + 1,
-                cur_buf.cursor.col + 1
-            );
-
-            let msg_info = if let Some((msg, _)) = &self.status_message {
-                format!(" | {msg}")
-            } else {
-                String::new()
-            };
-
-            let left_part = format!("{file_info}{sel_info}{msg_info}");
-            let badge_len = badge_name.len();
-            let total_avail = (cols as usize).saturating_sub(badge_len);
-            let padding = total_avail.saturating_sub(left_part.len() + right_info.len());
-
-            write!(self.stdout, "{left_part}{:<padding$}{right_info}", "")?;
-
-            let cur_screen_x = gutter_width + cur_buf.cursor.col.saturating_sub(cur_buf.scroll_col);
-            let cur_screen_y =
-                content_start_y as usize + cur_buf.cursor.row.saturating_sub(cur_buf.scroll_row);
-            execute!(
-                self.stdout,
-                cursor::MoveTo(cur_screen_x as u16, cur_screen_y as u16),
-                cursor::Show
-            )?;
-        }
-
-        if self.completion.visible && !self.completion.items.is_empty() {
-            let cur_buf = &self.buffers[self.current_buffer];
-            let trigger_screen_x = gutter_width
-                + self
-                    .completion
-                    .trigger_col
-                    .saturating_sub(cur_buf.scroll_col);
-            let cur_screen_y =
-                content_start_y as usize + cur_buf.cursor.row.saturating_sub(cur_buf.scroll_row);
-            Self::render_completion_menu(
-                &mut self.stdout,
-                &self.completion,
-                trigger_screen_x,
-                cur_screen_y,
-                cols,
-                rows,
-            )?;
-        }
-
-        if self.mode == Mode::Match && self.match_state == crate::types::MatchState::Menu {
-            let cur_buf = &self.buffers[self.current_buffer];
-            let cur_screen_x = gutter_width + cur_buf.cursor.col.saturating_sub(cur_buf.scroll_col);
-            let cur_screen_y =
-                content_start_y as usize + cur_buf.cursor.row.saturating_sub(cur_buf.scroll_row);
-            Self::render_match_menu(
-                &mut self.stdout,
-                &self.theme,
-                cur_screen_x,
-                cur_screen_y,
-                cols,
-                rows,
-            )?;
-        }
-
-        if self.mode == Mode::Goto {
-            let cur_buf = &self.buffers[self.current_buffer];
-            let cur_screen_x = gutter_width + cur_buf.cursor.col.saturating_sub(cur_buf.scroll_col);
-            let cur_screen_y =
-                content_start_y as usize + cur_buf.cursor.row.saturating_sub(cur_buf.scroll_row);
-            Self::render_goto_menu(
-                &mut self.stdout,
-                &self.theme,
-                cur_screen_x,
-                cur_screen_y,
-                cols,
-                rows,
-            )?;
-        }
-
-        if let Some(picker) = &self.file_picker {
-            Self::render_file_picker(&mut self.stdout, &self.theme, picker, cols, rows)?;
-        }
-
-        if self.mode == Mode::Command {
-            // Use the original prefix when cycling, otherwise the current buffer
-            let query = self
-                .command_prefix
-                .as_deref()
-                .unwrap_or(&self.command_buffer);
-            if !query.contains(' ') {
-                let selected = if self.command_prefix.is_some() {
-                    Some(self.command_buffer.as_str())
-                } else {
-                    None
+                let (badge_bg, badge_name) = match mode {
+                    Mode::Normal => (theme.badge_nor_bg, " NOR "),
+                    Mode::Insert => (theme.badge_ins_bg, " INS "),
+                    Mode::Visual => (theme.badge_goto_bg, " SEL "),
+                    Mode::Goto => (theme.badge_goto_bg, " GOTO "),
+                    Mode::Match => (theme.badge_goto_bg, " MATCH "),
+                    Mode::Leader => (theme.badge_cmd_bg, " SPACE "),
+                    Mode::Replace => (theme.badge_ins_bg, " REP "),
+                    Mode::Command => unreachable!(),
                 };
-                Self::render_command_completions(
-                    &mut self.stdout,
-                    &self.theme,
-                    query,
-                    selected,
+
+                let badge_style = Style::default()
+                    .bg(to_ratatui_color(badge_bg))
+                    .fg(to_ratatui_color(theme.badge_text))
+                    .add_modifier(Modifier::BOLD);
+                let status_style = Style::default()
+                    .bg(to_ratatui_color(theme.status_bg))
+                    .fg(to_ratatui_color(theme.status_fg));
+
+                let dirty_flag = if cur_buf.modified { " [+]" } else { "" };
+                let fname = cur_buf
+                    .path
+                    .file_name()
+                    .unwrap_or(cur_buf.path.as_os_str())
+                    .to_string_lossy();
+                let is_unnamed = cur_buf.path.as_os_str().is_empty() || fname == "scratch";
+                let lang_name = cur_buf.language();
+                let file_info = if is_unnamed {
+                    if cur_buf.modified {
+                        format!(" [{lang_name}] [+]")
+                    } else {
+                        format!(" [{lang_name}]")
+                    }
+                } else {
+                    format!(" {} [{lang_name}]{dirty_flag}", cur_buf.path.display())
+                };
+
+                let sel_info = if cur_buf.anchor != cur_buf.cursor {
+                    let (start, end) = cur_buf.selection_bounds();
+                    if start.row == end.row {
+                        format!(" [sel: {}ch]", end.col.saturating_sub(start.col))
+                    } else {
+                        format!(" [sel: {}L]", end.row - start.row + 1)
+                    }
+                } else {
+                    String::new()
+                };
+
+                let right_info = format!(
+                    "1 sel  {}:{} ",
+                    cur_buf.cursor.row + 1,
+                    cur_buf.cursor.col + 1
+                );
+
+                let msg_info = if let Some((msg, _)) = status_message {
+                    format!(" | {msg}")
+                } else {
+                    String::new()
+                };
+
+                let left_part = format!("{file_info}{sel_info}{msg_info}");
+                let badge_len = badge_name.len();
+                let total_avail = (status_area.width as usize).saturating_sub(badge_len);
+                let padding = total_avail.saturating_sub(left_part.len() + right_info.len());
+
+                let status_line = Line::from(vec![
+                    Span::styled(badge_name, badge_style),
+                    Span::styled(left_part, status_style),
+                    Span::styled(" ".repeat(padding), status_style),
+                    Span::styled(right_info, status_style),
+                ]);
+                let status_p = Paragraph::new(status_line)
+                    .style(Style::default().bg(to_ratatui_color(theme.status_bg)));
+                frame.render_widget(status_p, status_area);
+
+                let cur_screen_x = content_area.x
+                    + gutter_width as u16
+                    + cur_buf.cursor.col.saturating_sub(cur_buf.scroll_col) as u16;
+                let cur_screen_y = content_area.y
+                    + cur_buf.cursor.row.saturating_sub(cur_buf.scroll_row) as u16;
+                frame.set_cursor_position(Position::new(cur_screen_x, cur_screen_y));
+            }
+
+            let cols = area.width;
+            let rows = area.height;
+
+            if completion.visible && !completion.items.is_empty() {
+                let trigger_screen_x = content_area.x as usize
+                    + gutter_width
+                    + completion.trigger_col.saturating_sub(cur_buf.scroll_col);
+                let cur_screen_y = content_area.y as usize
+                    + cur_buf.cursor.row.saturating_sub(cur_buf.scroll_row);
+                Self::render_completion_menu(
+                    frame,
+                    completion,
+                    trigger_screen_x,
+                    cur_screen_y,
                     cols,
                     rows,
-                )?;
+                );
             }
-        }
 
-        // Ensure hardware cursor is placed at the typing cursor position
-        if self.mode != Mode::Command {
-            let cur_buf = &self.buffers[self.current_buffer];
-            let cur_screen_x = gutter_width + cur_buf.cursor.col.saturating_sub(cur_buf.scroll_col);
-            let cur_screen_y =
-                content_start_y as usize + cur_buf.cursor.row.saturating_sub(cur_buf.scroll_row);
-            execute!(
-                self.stdout,
-                cursor::MoveTo(cur_screen_x as u16, cur_screen_y as u16),
-                cursor::Show
-            )?;
-        } else {
-            let badge_width = 5; // " CMD "
-            execute!(
-                self.stdout,
-                cursor::MoveTo(
-                    (badge_width + 2 + self.command_buffer.len()) as u16,
-                    rows.saturating_sub(1)
-                ),
-                cursor::Show
-            )?;
-        }
+            if mode == Mode::Match && match_state == crate::types::MatchState::Menu {
+                let cur_screen_x = content_area.x as usize
+                    + gutter_width
+                    + cur_buf.cursor.col.saturating_sub(cur_buf.scroll_col);
+                let cur_screen_y = content_area.y as usize
+                    + cur_buf.cursor.row.saturating_sub(cur_buf.scroll_row);
+                Self::render_match_menu(frame, theme, cur_screen_x, cur_screen_y, cols, rows);
+            }
 
-        self.stdout.flush()?;
+            if mode == Mode::Goto {
+                let cur_screen_x = content_area.x as usize
+                    + gutter_width
+                    + cur_buf.cursor.col.saturating_sub(cur_buf.scroll_col);
+                let cur_screen_y = content_area.y as usize
+                    + cur_buf.cursor.row.saturating_sub(cur_buf.scroll_row);
+                Self::render_goto_menu(frame, theme, cur_screen_x, cur_screen_y, cols, rows);
+            }
+
+            if let Some(picker) = file_picker {
+                Self::render_file_picker(frame, theme, picker, cols, rows);
+            }
+
+            if mode == Mode::Command {
+                let query = command_prefix
+                    .as_deref()
+                    .unwrap_or(command_buffer);
+                if !query.contains(' ') {
+                    let selected = if command_prefix.is_some() {
+                        Some(command_buffer.as_str())
+                    } else {
+                        None
+                    };
+                    Self::render_command_completions(frame, theme, query, selected, cols, rows);
+                }
+            }
+        })?;
+
         Ok(())
     }
 
     fn render_match_menu(
-        stdout: &mut Stdout,
+        frame: &mut Frame,
         _theme: &Theme,
         cursor_x: usize,
         cursor_y: usize,
         cols: u16,
         rows: u16,
-    ) -> Result<(), Box<dyn Error>> {
+    ) {
         let menu_width = 36;
         let menu_height = 8;
         let x = cursor_x
@@ -523,82 +513,44 @@ impl Editor {
             ("i", "Select inside object"),
         ];
 
-        let inner_w = menu_width.saturating_sub(2);
+        let popup_rect = Rect::new(x as u16, y as u16, menu_width as u16, menu_height as u16);
+        frame.render_widget(Clear, popup_rect);
 
-        // Top Border with Title ┌Match───...─┐
-        execute!(stdout, cursor::MoveTo(x as u16, y as u16))?;
-        let bg = Color::Rgb {
-            r: 38,
-            g: 42,
-            b: 58,
-        };
-        let border_fg = Color::Rgb {
-            r: 160,
-            g: 170,
-            b: 200,
-        };
-        let key_fg = Color::Rgb {
-            r: 240,
-            g: 242,
-            b: 250,
-        };
-        let desc_fg = Color::Rgb {
-            r: 180,
-            g: 190,
-            b: 215,
-        };
+        let bg = RatColor::Rgb(38, 42, 58);
+        let border_fg = RatColor::Rgb(160, 170, 200);
+        let key_fg = RatColor::Rgb(240, 242, 250);
+        let desc_fg = RatColor::Rgb(180, 190, 215);
 
-        execute!(
-            stdout,
-            SetBackgroundColor(bg),
-            SetForegroundColor(border_fg)
-        )?;
-        let title = "Match";
-        let dashes = inner_w.saturating_sub(title.len());
-        write!(stdout, "┌{title}{}┐", "─".repeat(dashes))?;
+        let block = Block::default()
+            .borders(Borders::ALL)
+            .border_type(BorderType::Plain)
+            .title("Match")
+            .border_style(Style::default().fg(border_fg).bg(bg))
+            .style(Style::default().bg(bg));
 
-        // Rows
-        for (i, (key, desc)) in items.iter().enumerate() {
-            execute!(stdout, cursor::MoveTo(x as u16, (y + 1 + i) as u16))?;
-            execute!(
-                stdout,
-                SetBackgroundColor(bg),
-                SetForegroundColor(border_fg)
-            )?;
-            write!(stdout, "│")?;
-
-            execute!(stdout, SetForegroundColor(key_fg))?;
-            write!(stdout, " {key}  ")?;
-
-            execute!(stdout, SetForegroundColor(desc_fg))?;
-            let written = 1 + key.len() + 2 + desc.len();
-            let pad = inner_w.saturating_sub(written);
-            write!(stdout, "{desc}{:<pad$}", "")?;
-
-            execute!(stdout, SetForegroundColor(border_fg))?;
-            write!(stdout, "│")?;
+        let mut lines = Vec::new();
+        for (key, desc) in items {
+            lines.push(Line::from(vec![
+                Span::styled(
+                    format!(" {key}  "),
+                    Style::default().fg(key_fg).add_modifier(Modifier::BOLD),
+                ),
+                Span::styled(desc, Style::default().fg(desc_fg)),
+            ]));
         }
 
-        // Bottom Border
-        execute!(stdout, cursor::MoveTo(x as u16, (y + 7) as u16))?;
-        execute!(
-            stdout,
-            SetBackgroundColor(bg),
-            SetForegroundColor(border_fg)
-        )?;
-        write!(stdout, "└{}┘", "─".repeat(inner_w))?;
-
-        Ok(())
+        let p = Paragraph::new(lines).block(block);
+        frame.render_widget(p, popup_rect);
     }
 
     fn render_goto_menu(
-        stdout: &mut Stdout,
+        frame: &mut Frame,
         _theme: &Theme,
         cursor_x: usize,
         cursor_y: usize,
         cols: u16,
         rows: u16,
-    ) -> Result<(), Box<dyn Error>> {
+    ) {
         let items = [
             ("g", "Start of file"),
             ("e", "End of file"),
@@ -621,7 +573,7 @@ impl Editor {
         ];
 
         let menu_width = 36;
-        let menu_height = items.len() + 2;
+        let menu_height = (items.len() + 2).min((rows as usize).saturating_sub(1));
         let x = cursor_x
             .min((cols as usize).saturating_sub(menu_width + 2))
             .max(2);
@@ -633,96 +585,53 @@ impl Editor {
             1
         };
 
-        let inner_w = menu_width.saturating_sub(2);
+        let popup_rect = Rect::new(x as u16, y as u16, menu_width as u16, menu_height as u16);
+        frame.render_widget(Clear, popup_rect);
 
-        // Top Border with Title ┌Goto───...─┐
-        execute!(stdout, cursor::MoveTo(x as u16, y as u16))?;
-        let bg = Color::Rgb {
-            r: 38,
-            g: 42,
-            b: 58,
-        };
-        let border_fg = Color::Rgb {
-            r: 160,
-            g: 170,
-            b: 200,
-        };
-        let key_fg = Color::Rgb {
-            r: 240,
-            g: 242,
-            b: 250,
-        };
-        let desc_fg = Color::Rgb {
-            r: 180,
-            g: 190,
-            b: 215,
-        };
+        let bg = RatColor::Rgb(38, 42, 58);
+        let border_fg = RatColor::Rgb(160, 170, 200);
+        let key_fg = RatColor::Rgb(240, 242, 250);
+        let desc_fg = RatColor::Rgb(180, 190, 215);
 
-        execute!(
-            stdout,
-            SetBackgroundColor(bg),
-            SetForegroundColor(border_fg)
-        )?;
-        let title = "Goto";
-        let dashes = inner_w.saturating_sub(title.len());
-        write!(stdout, "┌{title}{}┐", "─".repeat(dashes))?;
+        let block = Block::default()
+            .borders(Borders::ALL)
+            .border_type(BorderType::Plain)
+            .title("Goto")
+            .border_style(Style::default().fg(border_fg).bg(bg))
+            .style(Style::default().bg(bg));
 
-        // Rows
-        for (i, (key, desc)) in items.iter().enumerate() {
-            let row_y = y + 1 + i;
-            if row_y >= (rows as usize).saturating_sub(1) {
-                break;
-            }
-            execute!(stdout, cursor::MoveTo(x as u16, row_y as u16))?;
-            execute!(
-                stdout,
-                SetBackgroundColor(bg),
-                SetForegroundColor(border_fg)
-            )?;
-            write!(stdout, "│")?;
-
-            execute!(stdout, SetForegroundColor(key_fg))?;
-            write!(stdout, " {key}  ")?;
-
-            execute!(stdout, SetForegroundColor(desc_fg))?;
-            let written = 1 + key.len() + 2 + desc.len();
-            let pad = inner_w.saturating_sub(written);
-            write!(stdout, "{desc}{:<pad$}", "")?;
-
-            execute!(stdout, SetForegroundColor(border_fg))?;
-            write!(stdout, "│")?;
+        let mut lines = Vec::new();
+        for (key, desc) in items {
+            lines.push(Line::from(vec![
+                Span::styled(
+                    format!(" {key}  "),
+                    Style::default().fg(key_fg).add_modifier(Modifier::BOLD),
+                ),
+                Span::styled(desc, Style::default().fg(desc_fg)),
+            ]));
         }
 
-        // Bottom Border
-        let bottom_y = (y + items.len() + 1).min((rows as usize).saturating_sub(1));
-        execute!(stdout, cursor::MoveTo(x as u16, bottom_y as u16))?;
-        execute!(
-            stdout,
-            SetBackgroundColor(bg),
-            SetForegroundColor(border_fg)
-        )?;
-        write!(stdout, "└{}┘", "─".repeat(inner_w))?;
-
-        Ok(())
+        let p = Paragraph::new(lines).block(block);
+        frame.render_widget(p, popup_rect);
     }
 
     fn render_completion_menu(
-        stdout: &mut Stdout,
+        frame: &mut Frame,
         completion: &crate::completion::CompletionMenu,
         trigger_screen_x: usize,
         cursor_screen_y: usize,
         cols: u16,
         rows: u16,
-    ) -> Result<(), Box<dyn Error>> {
+    ) {
         let total_items = completion.items.len();
         if total_items == 0 {
-            return Ok(());
+            return;
         }
 
         let visible_count = 10.min(total_items);
-        let menu_width = 72
+        let menu_width = 80
             .min((cols as usize).saturating_sub(trigger_screen_x + 2))
-            .max(40);
+            .max(48);
         let menu_x = trigger_screen_x.min((cols as usize).saturating_sub(menu_width + 1));
 
         let menu_y = if cursor_screen_y + 1 + visible_count < (rows as usize).saturating_sub(1) {
@@ -732,6 +641,14 @@ impl Editor {
         } else {
             cursor_screen_y + 1
         };
+
+        let popup_rect = Rect::new(
+            menu_x as u16,
+            menu_y as u16,
+            menu_width as u16,
+            visible_count as u16,
+        );
+        frame.render_widget(Clear, popup_rect);
 
         let start_idx = completion.scroll_offset;
         let end_idx = (start_idx + visible_count).min(total_items);
@@ -743,116 +660,86 @@ impl Editor {
             0
         };
 
-        for (row_offset, idx) in (start_idx..end_idx).enumerate() {
-            let y = (menu_y + row_offset) as u16;
-            execute!(stdout, cursor::MoveTo(menu_x as u16, y))?;
+        let label_fg = RatColor::Rgb(220, 224, 236);
+        let detail_fg = RatColor::Rgb(130, 135, 160);
+        let kind_fg = RatColor::Rgb(175, 170, 205);
+        let scrollbar_fg = RatColor::Rgb(125, 130, 155);
 
+        let mut lines = Vec::new();
+        for (row_offset, idx) in (start_idx..end_idx).enumerate() {
             let item = &completion.items[idx];
             let is_selected = idx == completion.selected_idx;
-
             let bg = if is_selected {
-                Color::Rgb {
-                    r: 52,
-                    g: 56,
-                    b: 76,
-                }
+                RatColor::Rgb(52, 56, 76)
             } else {
-                Color::Rgb {
-                    r: 36,
-                    g: 38,
-                    b: 50,
-                }
+                RatColor::Rgb(36, 38, 50)
             };
-
-            let label_fg = Color::Rgb {
-                r: 220,
-                g: 224,
-                b: 236,
-            };
-            let detail_fg = Color::Rgb {
-                r: 130,
-                g: 135,
-                b: 160,
-            };
-            let kind_fg = Color::Rgb {
-                r: 175,
-                g: 170,
-                b: 205,
-            };
-            let scrollbar_fg = Color::Rgb {
-                r: 125,
-                g: 130,
-                b: 155,
-            };
-
-            execute!(stdout, SetBackgroundColor(bg))?;
 
             let detail_str = item.detail.as_deref().unwrap_or("");
             let kind_str = &item.kind_name;
 
             let inner_width = menu_width.saturating_sub(2);
             let kind_len = kind_str.len();
-            let left_max = inner_width.saturating_sub(kind_len + 2);
+            let left_max = inner_width.saturating_sub(kind_len + 3);
 
-            write!(stdout, " ")?;
-            let mut chars_printed = 0;
-
-            execute!(stdout, SetForegroundColor(label_fg))?;
+            let mut label_part = String::new();
             for ch in item.label.chars() {
-                if chars_printed >= left_max {
+                if label_part.chars().count() >= left_max {
                     break;
                 }
-                write!(stdout, "{ch}")?;
-                chars_printed += 1;
+                label_part.push(ch);
             }
 
-            if !detail_str.is_empty() && chars_printed < left_max {
-                execute!(stdout, SetForegroundColor(detail_fg))?;
+            let mut detail_part = String::new();
+            if !detail_str.is_empty() {
+                detail_part.push_str("  ");
+                let current_chars = label_part.chars().count() + 2;
                 for ch in detail_str.chars() {
-                    if chars_printed >= left_max {
+                    if current_chars + (detail_part.chars().count() - 2) >= left_max {
                         break;
                     }
-                    write!(stdout, "{ch}")?;
-                    chars_printed += 1;
+                    detail_part.push(ch);
                 }
             }
 
-            let space_between = inner_width.saturating_sub(chars_printed + kind_len);
-            if space_between > 0 {
-                write!(stdout, "{:<space_between$}", "")?;
-            }
-
-            execute!(stdout, SetForegroundColor(kind_fg))?;
-            write!(stdout, "{kind_str}")?;
+            let chars_printed = label_part.chars().count() + detail_part.chars().count();
+            let space_between = inner_width.saturating_sub(chars_printed + kind_len).max(2);
 
             let is_thumb = total_items > visible_count
                 && row_offset >= thumb_start
                 && row_offset < thumb_start + thumb_len;
 
-            if is_thumb {
-                execute!(stdout, SetForegroundColor(scrollbar_fg))?;
-                write!(stdout, "▐")?;
-            } else {
-                write!(stdout, " ")?;
-            }
+            let scrollbar_sym = if is_thumb { "▐" } else { " " };
+
+            lines.push(Line::from(vec![
+                Span::styled(" ", Style::default().bg(bg)),
+                Span::styled(label_part, Style::default().fg(label_fg).bg(bg)),
+                Span::styled(detail_part, Style::default().fg(detail_fg).bg(bg)),
+                Span::styled(" ".repeat(space_between), Style::default().bg(bg)),
+                Span::styled(kind_str, Style::default().fg(kind_fg).bg(bg)),
+                Span::styled(
+                    scrollbar_sym,
+                    Style::default().fg(scrollbar_fg).bg(bg),
+                ),
+            ]));
         }
 
-        Ok(())
+        let p = Paragraph::new(lines);
+        frame.render_widget(p, popup_rect);
     }
 
     fn render_file_picker(
-        stdout: &mut Stdout,
+        frame: &mut Frame,
         theme: &Theme,
         picker: &FilePicker,
         cols: u16,
         rows: u16,
-    ) -> Result<(), Box<dyn Error>> {
+    ) {
         let height = (rows as usize).saturating_sub(6).max(10);
-        let y_start = 2; // Row 2, leaving row 0 (tab bar) and row 1 visible as in Helix photo
+        let y_start = 2;
         let x_margin = 4.min(cols.saturating_sub(20) as usize / 2);
         let total_width = (cols as usize).saturating_sub(x_margin * 2);
 
-        // Split: left box ~45%, 1 space gap, right box ~55%
         let left_width = (total_width * 45 / 100).max(28);
         let right_width = total_width.saturating_sub(left_width + 1);
 
@@ -860,134 +747,120 @@ impl Editor {
         let right_x = left_x + left_width + 1;
 
         let left_inner_w = left_width.saturating_sub(2);
-        let right_inner_w = right_width.saturating_sub(2);
 
-        // 1. Left Box: Top border
-        execute!(stdout, cursor::MoveTo(left_x as u16, y_start as u16))?;
-        execute!(
-            stdout,
-            SetBackgroundColor(theme.bg),
-            SetForegroundColor(theme.picker_border)
-        )?;
-        write!(stdout, "┌{}┐", "─".repeat(left_inner_w))?;
+        let left_rect = Rect::new(left_x as u16, y_start as u16, left_width as u16, height as u16);
+        let right_rect = Rect::new(right_x as u16, y_start as u16, right_width as u16, height as u16);
 
-        // Left Box: Search/Filter line (Row y_start + 1)
-        execute!(stdout, cursor::MoveTo(left_x as u16, (y_start + 1) as u16))?;
-        write!(stdout, "│")?;
-        execute!(
-            stdout,
-            SetBackgroundColor(theme.bg),
-            SetForegroundColor(theme.fg)
-        )?;
+        frame.render_widget(Clear, left_rect);
+        frame.render_widget(Clear, right_rect);
+
         let count_str = format!("{}/{}", picker.filtered_files.len(), picker.all_files.len());
         let count_len = count_str.len();
-        let prompt_prefix = " ";
         let query = &picker.filter_text;
+        let prompt_prefix = " ";
         let text_part = format!("{prompt_prefix}{query}");
         let space_w = left_inner_w.saturating_sub(text_part.len() + count_len + 1);
-        write!(stdout, "{text_part}{:<space_w$}", "")?;
-        execute!(stdout, SetForegroundColor(theme.status_fg))?;
-        write!(stdout, "{count_str} ")?;
-        execute!(stdout, SetForegroundColor(theme.picker_border))?;
-        write!(stdout, "│")?;
 
-        // Left Box: Divider line (Row y_start + 2)
-        execute!(stdout, cursor::MoveTo(left_x as u16, (y_start + 2) as u16))?;
-        write!(stdout, "├{}┤", "─".repeat(left_inner_w))?;
+        let mut left_lines = Vec::new();
+        left_lines.push(Line::from(vec![
+            Span::styled(text_part, Style::default().fg(to_ratatui_color(theme.fg)).bg(to_ratatui_color(theme.bg))),
+            Span::styled(" ".repeat(space_w), Style::default().bg(to_ratatui_color(theme.bg))),
+            Span::styled(format!("{count_str} "), Style::default().fg(to_ratatui_color(theme.status_fg)).bg(to_ratatui_color(theme.bg))),
+        ]));
 
-        // Left Box: File items rows
+        left_lines.push(Line::from(Span::styled(
+            "─".repeat(left_inner_w),
+            Style::default().fg(to_ratatui_color(theme.picker_border)).bg(to_ratatui_color(theme.bg)),
+        )));
+
         let visible_items = height.saturating_sub(4);
         for i in 0..visible_items {
-            let row_y = y_start + 3 + i;
-            execute!(stdout, cursor::MoveTo(left_x as u16, row_y as u16))?;
-            execute!(
-                stdout,
-                SetBackgroundColor(theme.bg),
-                SetForegroundColor(theme.picker_border)
-            )?;
-            write!(stdout, "│")?;
-
             let item_idx = picker.scroll_offset + i;
             if item_idx < picker.filtered_files.len() {
                 let is_sel = item_idx == picker.selected_idx;
-                let bg = if is_sel { theme.selection_bg } else { theme.bg };
-                execute!(stdout, SetBackgroundColor(bg))?;
-
+                let row_bg = if is_sel {
+                    to_ratatui_color(theme.selection_bg)
+                } else {
+                    to_ratatui_color(theme.bg)
+                };
                 let prefix = if is_sel { "> " } else { "  " };
-                execute!(
-                    stdout,
-                    SetForegroundColor(if is_sel { theme.fg } else { theme.status_fg })
-                )?;
-                write!(stdout, "{prefix}")?;
+                let prefix_fg = if is_sel {
+                    to_ratatui_color(theme.fg)
+                } else {
+                    to_ratatui_color(theme.status_fg)
+                };
 
                 let file_path = &picker.filtered_files[item_idx];
+                let mut row_spans = Vec::new();
+                row_spans.push(Span::styled(prefix, Style::default().fg(prefix_fg).bg(row_bg)));
                 let mut written = prefix.len();
 
-                // Highlight directory prefix in blue (theme.function) and filename in foreground
                 if let Some(slash_idx) = file_path.rfind('/') {
                     let dir_part = &file_path[..=slash_idx];
                     let file_part = &file_path[slash_idx + 1..];
-                    execute!(stdout, SetForegroundColor(theme.function))?;
-                    write!(stdout, "{dir_part}")?;
-                    execute!(stdout, SetForegroundColor(theme.fg))?;
-                    write!(stdout, "{file_part}")?;
+                    row_spans.push(Span::styled(
+                        dir_part,
+                        Style::default().fg(to_ratatui_color(theme.function)).bg(row_bg),
+                    ));
+                    row_spans.push(Span::styled(
+                        file_part,
+                        Style::default().fg(to_ratatui_color(theme.fg)).bg(row_bg),
+                    ));
                     written += dir_part.len() + file_part.len();
                 } else {
-                    execute!(stdout, SetForegroundColor(theme.fg))?;
-                    write!(stdout, "{file_path}")?;
+                    row_spans.push(Span::styled(
+                        file_path,
+                        Style::default().fg(to_ratatui_color(theme.fg)).bg(row_bg),
+                    ));
                     written += file_path.len();
                 }
 
                 if written < left_inner_w {
-                    write!(stdout, "{:<width$}", "", width = left_inner_w - written)?;
+                    row_spans.push(Span::styled(
+                        " ".repeat(left_inner_w - written),
+                        Style::default().bg(row_bg),
+                    ));
                 }
+                left_lines.push(Line::from(row_spans));
             } else {
-                execute!(stdout, SetBackgroundColor(theme.bg))?;
-                write!(stdout, "{:<width$}", "", width = left_inner_w)?;
+                left_lines.push(Line::from(Span::styled(
+                    " ".repeat(left_inner_w),
+                    Style::default().bg(to_ratatui_color(theme.bg)),
+                )));
             }
-
-            execute!(
-                stdout,
-                SetBackgroundColor(theme.bg),
-                SetForegroundColor(theme.picker_border)
-            )?;
-            write!(stdout, "│")?;
         }
 
-        // Left Box: Bottom border
-        execute!(
-            stdout,
-            cursor::MoveTo(left_x as u16, (y_start + height - 1) as u16)
-        )?;
-        execute!(
-            stdout,
-            SetBackgroundColor(theme.bg),
-            SetForegroundColor(theme.picker_border)
-        )?;
-        write!(stdout, "└{}┘", "─".repeat(left_inner_w))?;
+        let left_block = Block::default()
+            .borders(Borders::ALL)
+            .border_type(BorderType::Plain)
+            .border_style(
+                Style::default()
+                    .fg(to_ratatui_color(theme.picker_border))
+                    .bg(to_ratatui_color(theme.bg)),
+            )
+            .style(Style::default().bg(to_ratatui_color(theme.bg)));
 
-        // 2. Right Box: Top border
-        execute!(stdout, cursor::MoveTo(right_x as u16, y_start as u16))?;
-        execute!(
-            stdout,
-            SetBackgroundColor(theme.bg),
-            SetForegroundColor(theme.picker_border)
-        )?;
-        write!(stdout, "┌{}┐", "─".repeat(right_inner_w))?;
+        let left_paragraph = Paragraph::new(left_lines).block(left_block);
+        frame.render_widget(left_paragraph, left_rect);
 
-        // Right Box: Content rows (Preview)
-        let preview_height = height.saturating_sub(2);
+        if left_rect.height > 2 {
+            let buf = frame.buffer_mut();
+            let divider_y = left_rect.y + 2;
+            if divider_y < left_rect.bottom() {
+                if let Some(cell) = buf.cell_mut((left_rect.x, divider_y)) {
+                    cell.set_symbol("├");
+                }
+                if let Some(cell) = buf.cell_mut((left_rect.right() - 1, divider_y)) {
+                    cell.set_symbol("┤");
+                }
+            }
+        }
+
         let preview_file_path = picker.selected_file();
-        for i in 0..preview_height {
-            let row_y = y_start + 1 + i;
-            execute!(stdout, cursor::MoveTo(right_x as u16, row_y as u16))?;
-            execute!(
-                stdout,
-                SetBackgroundColor(theme.bg),
-                SetForegroundColor(theme.picker_border)
-            )?;
-            write!(stdout, "│")?;
+        let preview_height = height.saturating_sub(2);
+        let mut right_lines = Vec::new();
 
+        for i in 0..preview_height {
             if i < picker.preview_lines.len() {
                 let line = &picker.preview_lines[i];
                 let tokens = if let Some(p) = &preview_file_path {
@@ -996,79 +869,82 @@ impl Editor {
                     line.chars().map(|c| (c, theme.fg)).collect()
                 };
 
-                execute!(stdout, SetBackgroundColor(theme.bg))?;
-                write!(stdout, " ")?;
-                let mut col_count = 1;
-                for (ch, color) in tokens {
-                    if col_count + 1 >= right_inner_w {
-                        break;
-                    }
-                    execute!(stdout, SetForegroundColor(color))?;
-                    write!(stdout, "{ch}")?;
-                    col_count += 1;
-                }
-                if col_count < right_inner_w {
-                    execute!(stdout, SetForegroundColor(theme.fg))?;
-                    write!(stdout, "{:<width$}", "", width = right_inner_w - col_count)?;
-                }
-            } else {
-                execute!(stdout, SetBackgroundColor(theme.bg))?;
-                write!(stdout, "{:<width$}", "", width = right_inner_w)?;
-            }
+                let mut spans = Vec::new();
+                spans.push(Span::styled(" ", Style::default().bg(to_ratatui_color(theme.bg))));
+                let mut cur_text = String::new();
+                let mut cur_color = None;
 
-            execute!(
-                stdout,
-                SetBackgroundColor(theme.bg),
-                SetForegroundColor(theme.picker_border)
-            )?;
-            write!(stdout, "│")?;
+                for (ch, color) in tokens {
+                    if cur_color == Some(color) {
+                        cur_text.push(ch);
+                    } else {
+                        if !cur_text.is_empty() {
+                            spans.push(Span::styled(
+                                cur_text.clone(),
+                                Style::default()
+                                    .fg(to_ratatui_color(cur_color.unwrap()))
+                                    .bg(to_ratatui_color(theme.bg)),
+                            ));
+                            cur_text.clear();
+                        }
+                        cur_color = Some(color);
+                        cur_text.push(ch);
+                    }
+                }
+                if !cur_text.is_empty() {
+                    spans.push(Span::styled(
+                        cur_text,
+                        Style::default()
+                            .fg(to_ratatui_color(cur_color.unwrap()))
+                            .bg(to_ratatui_color(theme.bg)),
+                    ));
+                }
+                right_lines.push(Line::from(spans));
+            } else {
+                right_lines.push(Line::from(Span::styled(
+                    "",
+                    Style::default().bg(to_ratatui_color(theme.bg)),
+                )));
+            }
         }
 
-        // Right Box: Bottom border
-        execute!(
-            stdout,
-            cursor::MoveTo(right_x as u16, (y_start + height - 1) as u16)
-        )?;
-        execute!(
-            stdout,
-            SetBackgroundColor(theme.bg),
-            SetForegroundColor(theme.picker_border)
-        )?;
-        write!(stdout, "└{}┘", "─".repeat(right_inner_w))?;
+        let right_block = Block::default()
+            .borders(Borders::ALL)
+            .border_type(BorderType::Plain)
+            .border_style(
+                Style::default()
+                    .fg(to_ratatui_color(theme.picker_border))
+                    .bg(to_ratatui_color(theme.bg)),
+            )
+            .style(Style::default().bg(to_ratatui_color(theme.bg)));
 
-        // Position terminal cursor right inside search input
-        let cur_x = (left_x + 2 + picker.filter_text.len()).min(left_x + left_inner_w - 6);
-        execute!(
-            stdout,
-            cursor::MoveTo(cur_x as u16, (y_start + 1) as u16),
-            cursor::Show
-        )?;
+        let right_paragraph = Paragraph::new(right_lines).block(right_block);
+        frame.render_widget(right_paragraph, right_rect);
 
-        Ok(())
+        let cur_x = (left_x + 2 + picker.filter_text.len()).min(left_x + left_inner_w.saturating_sub(6));
+        frame.set_cursor_position(Position::new(cur_x as u16, (y_start + 1) as u16));
     }
 
     fn render_command_completions(
-        stdout: &mut Stdout,
+        frame: &mut Frame,
         theme: &Theme,
         cmd_input: &str,
         selected: Option<&str>,
         cols: u16,
         rows: u16,
-    ) -> Result<(), Box<dyn Error>> {
+    ) {
         let matches = crate::editor::commands::get_command_completions(cmd_input);
         if matches.is_empty() {
-            return Ok(());
+            return;
         }
 
         let total_items = matches.len();
         let visible_count = 8.min(total_items);
         let menu_width = 38.min((cols as usize).saturating_sub(4)).max(25);
-        let inner_w = menu_width.saturating_sub(2);
 
         let menu_x = 1;
         let menu_y = (rows as usize).saturating_sub(1 + visible_count + 2);
 
-        // Determine which item is selected: use explicit `selected` param, else match cmd_input
         let selected_pos = if let Some(sel) = selected {
             matches.iter().position(|&m| m == sel).unwrap_or(0)
         } else {
@@ -1080,84 +956,52 @@ impl Editor {
             0
         };
 
-        let bg = Color::Rgb {
-            r: 32,
-            g: 35,
-            b: 46,
-        };
-        let border_fg = Color::Rgb {
-            r: 130,
-            g: 140,
-            b: 175,
-        };
-        let text_fg = Color::Rgb {
-            r: 215,
-            g: 220,
-            b: 235,
-        };
+        let popup_rect = Rect::new(
+            menu_x as u16,
+            menu_y as u16,
+            menu_width as u16,
+            (visible_count + 2) as u16,
+        );
+        frame.render_widget(Clear, popup_rect);
 
-        // Top Border with Title ┌Commands─...─┐
-        execute!(stdout, cursor::MoveTo(menu_x as u16, menu_y as u16))?;
-        execute!(
-            stdout,
-            SetBackgroundColor(bg),
-            SetForegroundColor(border_fg)
-        )?;
-        let title = "Commands";
-        let dashes = inner_w.saturating_sub(title.len());
-        write!(stdout, "┌{title}{}┐", "─".repeat(dashes))?;
+        let bg = RatColor::Rgb(32, 35, 46);
+        let border_fg = RatColor::Rgb(130, 140, 175);
+        let text_fg = RatColor::Rgb(215, 220, 235);
 
+        let block = Block::default()
+            .borders(Borders::ALL)
+            .border_type(BorderType::Plain)
+            .title("Commands")
+            .border_style(Style::default().fg(border_fg).bg(bg))
+            .style(Style::default().bg(bg));
+
+        let mut lines = Vec::new();
         for i in 0..visible_count {
             let idx = scroll_offset + i;
             if idx >= total_items {
                 break;
             }
-            let y = (menu_y + 1 + i) as u16;
-            execute!(stdout, cursor::MoveTo(menu_x as u16, y))?;
-
             let cmd_name = matches[idx];
             let is_sel = idx == selected_pos;
-            let row_bg = if is_sel { theme.selection_bg } else { bg };
-
-            execute!(
-                stdout,
-                SetBackgroundColor(bg),
-                SetForegroundColor(border_fg)
-            )?;
-            write!(stdout, "│")?;
-
-            execute!(stdout, SetBackgroundColor(row_bg))?;
+            let row_bg = if is_sel {
+                to_ratatui_color(theme.selection_bg)
+            } else {
+                bg
+            };
+            let row_fg = if is_sel {
+                to_ratatui_color(theme.keyword)
+            } else {
+                text_fg
+            };
             let prefix = if is_sel { "> :" } else { "  :" };
-            execute!(
-                stdout,
-                SetForegroundColor(if is_sel { theme.keyword } else { text_fg })
-            )?;
-            write!(stdout, "{prefix}{cmd_name}")?;
 
-            let written = prefix.len() + cmd_name.len();
-            let pad = inner_w.saturating_sub(written);
-            write!(stdout, "{:<pad$}", "")?;
-
-            execute!(
-                stdout,
-                SetBackgroundColor(bg),
-                SetForegroundColor(border_fg)
-            )?;
-            write!(stdout, "│")?;
+            lines.push(Line::from(vec![
+                Span::styled(prefix, Style::default().fg(row_fg).bg(row_bg)),
+                Span::styled(cmd_name, Style::default().fg(row_fg).bg(row_bg)),
+            ]));
         }
 
-        // Bottom border
-        execute!(
-            stdout,
-            cursor::MoveTo(menu_x as u16, (menu_y + 1 + visible_count) as u16)
-        )?;
-        execute!(
-            stdout,
-            SetBackgroundColor(bg),
-            SetForegroundColor(border_fg)
-        )?;
-        write!(stdout, "└{}┘", "─".repeat(inner_w))?;
-
-        Ok(())
+        let p = Paragraph::new(lines).block(block);
+        frame.render_widget(p, popup_rect);
     }
 }

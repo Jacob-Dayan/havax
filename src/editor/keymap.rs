@@ -101,7 +101,29 @@ impl Editor {
             self.completion.close();
         }
 
-        // If pending_c is active (waiting for 'b' to clipboard-yank, or standard change)
+        if self.pending_r {
+            self.pending_r = false;
+            match code {
+                KeyCode::Esc => {
+                    return Ok(true);
+                }
+                KeyCode::Char(c) => {
+                    let buf = self.buf_mut();
+                    buf.push_history();
+                    buf.replace_char_at_cursor(c);
+                    buf.anchor = buf.cursor;
+                    self.notify_lsp_change();
+                    if self.mode == Mode::Visual {
+                        self.mode = Mode::Normal;
+                    }
+                    return Ok(true);
+                }
+                _ => {
+                    return Ok(true);
+                }
+            }
+        }
+
         if self.pending_c {
             self.pending_c = false;
             match (code, modifiers) {
@@ -456,6 +478,12 @@ impl Editor {
                     buf.anchor = buf.cursor;
                     self.status_message = None;
                 }
+                (KeyCode::Char('r'), KeyModifiers::NONE) => {
+                    self.pending_r = true;
+                }
+                (KeyCode::Char('R'), _) | (KeyCode::Char('r'), KeyModifiers::SHIFT) => {
+                    self.mode = Mode::Replace;
+                }
                 _ => {}
             },
 
@@ -596,6 +624,12 @@ impl Editor {
                 (KeyCode::Char(':'), KeyModifiers::NONE) => {
                     self.command_buffer.clear();
                     self.mode = Mode::Command;
+                }
+                (KeyCode::Char('r'), KeyModifiers::NONE) => {
+                    self.pending_r = true;
+                }
+                (KeyCode::Char('R'), _) | (KeyCode::Char('r'), KeyModifiers::SHIFT) => {
+                    self.mode = Mode::Replace;
                 }
                 _ => {}
             },
@@ -1082,6 +1116,94 @@ impl Editor {
                     }
                 }
             }
+
+            Mode::Replace => match (code, modifiers) {
+                (KeyCode::Esc, _) | (KeyCode::Char('R'), KeyModifiers::NONE) => {
+                    self.mode = Mode::Normal;
+                    let buf = self.buf_mut();
+                    if buf.cursor.col > 0
+                        && buf.cursor.col >= buf.lines[buf.cursor.row].chars().count()
+                    {
+                        buf.cursor.col = buf.cursor.col.saturating_sub(1);
+                    }
+                    buf.clamp_cursor();
+                    buf.anchor = buf.cursor;
+                }
+                (KeyCode::Left, _) => {
+                    let buf = self.buf_mut();
+                    buf.cursor.col = buf.cursor.col.saturating_sub(1);
+                    buf.anchor = buf.cursor;
+                }
+                (KeyCode::Right, _) => {
+                    let buf = self.buf_mut();
+                    let len = buf.lines[buf.cursor.row].chars().count();
+                    buf.cursor.col = (buf.cursor.col + 1).min(len);
+                    buf.anchor = buf.cursor;
+                }
+                (KeyCode::Up, _) => {
+                    let buf = self.buf_mut();
+                    buf.cursor.row = buf.cursor.row.saturating_sub(1);
+                    buf.clamp_cursor();
+                    buf.anchor = buf.cursor;
+                }
+                (KeyCode::Down, _) => {
+                    let buf = self.buf_mut();
+                    buf.cursor.row = (buf.cursor.row + 1).min(buf.lines.len().saturating_sub(1));
+                    buf.clamp_cursor();
+                    buf.anchor = buf.cursor;
+                }
+                (KeyCode::Backspace, _) => {
+                    let buf = self.buf_mut();
+                    buf.cursor.col = buf.cursor.col.saturating_sub(1);
+                    buf.anchor = buf.cursor;
+                }
+                (KeyCode::Enter, _) => {
+                    let buf = self.buf_mut();
+                    buf.push_history();
+                    buf.insert_newline();
+                    self.notify_lsp_change();
+                }
+                (KeyCode::Tab, _) => {
+                    let buf = self.buf_mut();
+                    buf.push_history();
+                    for _ in 0..TAB_SIZE {
+                        let row = buf.cursor.row;
+                        let mut chars: Vec<char> = buf.lines[row].chars().collect();
+                        if buf.cursor.col < chars.len() {
+                            chars[buf.cursor.col] = ' ';
+                        } else {
+                            chars.push(' ');
+                        }
+                        buf.lines[row] = chars.into_iter().collect();
+                        buf.cursor.col += 1;
+                    }
+                    buf.modified = true;
+                    buf.needs_reparse = true;
+                    buf.anchor = buf.cursor;
+                    self.notify_lsp_change();
+                }
+                (KeyCode::Char(c), _)
+                    if !modifiers.contains(KeyModifiers::CONTROL)
+                        && !modifiers.contains(KeyModifiers::ALT) =>
+                {
+                    let buf = self.buf_mut();
+                    buf.push_history();
+                    let row = buf.cursor.row;
+                    let mut chars: Vec<char> = buf.lines[row].chars().collect();
+                    if buf.cursor.col < chars.len() {
+                        chars[buf.cursor.col] = c;
+                    } else {
+                        chars.push(c);
+                    }
+                    buf.lines[row] = chars.into_iter().collect();
+                    buf.cursor.col += 1;
+                    buf.modified = true;
+                    buf.needs_reparse = true;
+                    buf.anchor = buf.cursor;
+                    self.notify_lsp_change();
+                }
+                _ => {}
+            },
         }
 
         Ok(true)

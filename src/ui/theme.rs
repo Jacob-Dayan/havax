@@ -1,8 +1,30 @@
-#![allow(dead_code)]
-
 use crossterm::style::Color;
 
 pub const TAB_SIZE: usize = 4;
+
+pub fn to_ratatui_color(color: Color) -> ratatui::style::Color {
+    match color {
+        Color::Reset => ratatui::style::Color::Reset,
+        Color::Black => ratatui::style::Color::Black,
+        Color::DarkGrey => ratatui::style::Color::DarkGray,
+        Color::Red => ratatui::style::Color::Red,
+        Color::DarkRed => ratatui::style::Color::LightRed,
+        Color::Green => ratatui::style::Color::Green,
+        Color::DarkGreen => ratatui::style::Color::LightGreen,
+        Color::Yellow => ratatui::style::Color::Yellow,
+        Color::DarkYellow => ratatui::style::Color::LightYellow,
+        Color::Blue => ratatui::style::Color::Blue,
+        Color::DarkBlue => ratatui::style::Color::LightBlue,
+        Color::Magenta => ratatui::style::Color::Magenta,
+        Color::DarkMagenta => ratatui::style::Color::LightMagenta,
+        Color::Cyan => ratatui::style::Color::Cyan,
+        Color::DarkCyan => ratatui::style::Color::LightCyan,
+        Color::White => ratatui::style::Color::White,
+        Color::Grey => ratatui::style::Color::Gray,
+        Color::Rgb { r, g, b } => ratatui::style::Color::Rgb(r, g, b),
+        Color::AnsiValue(v) => ratatui::style::Color::Indexed(v),
+    }
+}
 
 #[derive(Clone, Copy, Debug)]
 pub struct Theme {

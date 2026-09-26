@@ -1,6 +1,6 @@
 [package]
 name = "havax"
-version = "0.1.2"
+version = "0.1.3"
 edition = "2024"
 license = "MPL-2.0"
 
@@ -8,6 +8,7 @@ license = "MPL-2.0"
 clap = { version = "4.6.7", features = ["derive"] }
 crossterm = "0.29.0"
 libloading = "0.9.0"
+ratatui = "0.30.2"
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.151"
 toml = "1.1.6"

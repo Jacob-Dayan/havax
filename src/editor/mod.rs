@@ -52,6 +52,7 @@ pub struct Editor {
     pub completion: CompletionMenu,
     pub lsp_doc_version: i32,
     pub pending_c: bool,
+    pub pending_r: bool,
     pub prev_buffer_idx: usize,
     pub active_completion_req: u64,
 }
@@ -104,6 +105,7 @@ impl Editor {
             completion,
             lsp_doc_version: 1,
             pending_c: false,
+            pending_r: false,
             prev_buffer_idx: 0,
             active_completion_req: 0,
         };
@@ -837,7 +839,7 @@ impl Editor {
         if let Some(lsp) = lsp_client {
             let req_id = lsp.request_definition(&path, row, col);
             let start = std::time::Instant::now();
-            while start.elapsed() < std::time::Duration::from_millis(150) {
+            while start.elapsed() < std::time::Duration::from_millis(400) {
                 if let Some(loc) = lsp.get_definition_for(req_id) {
                     self.jump_to_location(&loc)?;
                     self.set_status(
@@ -850,7 +852,6 @@ impl Editor {
             }
         }
 
-        // Fallback: search symbol in buffer
         let word = self.buf().get_word_at_cursor();
         if !word.is_empty() {
             let found = self.buf().lines.iter().enumerate().find_map(|(idx, line)| {
@@ -878,6 +879,16 @@ impl Editor {
                 buf.anchor = target_pos;
                 self.set_status(
                     &format!("Jumped to definition on line {}", target_row + 1),
+                    false,
+                );
+                return Ok(());
+            }
+
+            if is_rust
+                && let Some(loc) = find_std_or_crate_definition(&word) {
+                self.jump_to_location(&loc)?;
+                self.set_status(
+                    &format!("Jumped to {}:{}", loc.path.display(), loc.line + 1),
                     false,
                 );
                 return Ok(());
@@ -1292,6 +1303,10 @@ impl Editor {
         }
         Ok(())
     }
+
+    pub fn get_source_search_roots() -> Vec<PathBuf> {
+        get_source_search_roots()
+    }
 }
 
 pub fn base64_encode(data: &[u8]) -> String {
@@ -1389,4 +1404,108 @@ pub fn expand_snippet(
     });
 
     (cleaned_lines, target)
+}
+
+fn get_source_search_roots() -> Vec<PathBuf> {
+    let mut roots = Vec::new();
+
+    if let Ok(home) = std::env::var("HOME").or_else(|_| std::env::var("USERPROFILE")) {
+        let home_path = PathBuf::from(home);
+        let cargo_registry = home_path.join(".cargo/registry/src");
+        if cargo_registry.is_dir()
+            && let Ok(entries) = std::fs::read_dir(&cargo_registry) {
+            for entry in entries.flatten() {
+                let p = entry.path();
+                if p.is_dir() {
+                    roots.push(p);
+                }
+            }
+        }
+
+        let rustup_toolchains = home_path.join(".rustup/toolchains");
+        if rustup_toolchains.is_dir()
+            && let Ok(entries) = std::fs::read_dir(&rustup_toolchains) {
+            for entry in entries.flatten() {
+                let lib_src = entry.path().join("lib/rustlib/src/rust/library");
+                if lib_src.is_dir() {
+                    roots.push(lib_src);
+                }
+            }
+        }
+    }
+
+    if let Ok(output) = std::process::Command::new("rustc").arg("--print").arg("sysroot").output()
+        && output.status.success() {
+        let sysroot_str = String::from_utf8_lossy(&output.stdout).trim().to_string();
+        let sysroot_lib = PathBuf::from(sysroot_str).join("lib/rustlib/src/rust/library");
+        if sysroot_lib.is_dir() && !roots.contains(&sysroot_lib) {
+            roots.push(sysroot_lib);
+        }
+    }
+
+    let usr_lib = PathBuf::from("/usr/lib/rustlib/src/rust/library");
+    if usr_lib.is_dir() && !roots.contains(&usr_lib) {
+        roots.push(usr_lib);
+    }
+
+    roots
+}
+
+fn search_dir_for_symbol(dir: &std::path::Path, word: &str, depth: usize, max_depth: usize) -> Option<crate::lsp::Location> {
+    if depth > max_depth {
+        return None;
+    }
+    let entries = std::fs::read_dir(dir).ok()?;
+    let mut subdirs = Vec::new();
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path.is_file() && path.extension().and_then(|e| e.to_str()) == Some("rs") {
+            if let Ok(content) = std::fs::read_to_string(&path) {
+                for (line_idx, line) in content.lines().enumerate() {
+                    let matches_def = line.contains(&format!("struct {word}"))
+                        || line.contains(&format!("enum {word}"))
+                        || line.contains(&format!("trait {word}"))
+                        || line.contains(&format!("fn {word}"))
+                        || line.contains(&format!("type {word}"))
+                        || line.contains(&format!("mod {word}"))
+                        || line.contains(&format!("macro_rules! {word}"))
+                        || line.contains(&format!("const {word}"))
+                        || line.contains(&format!("static {word}"));
+                    if matches_def
+                        && let Some(col) = line.find(word) {
+                        return Some(crate::lsp::Location {
+                            path,
+                            line: line_idx,
+                            col,
+                        });
+                    }
+                }
+            }
+        } else if path.is_dir() {
+            let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
+            if !name.starts_with('.') && name != "target" && name != "tests" && name != "benches" {
+                subdirs.push(path);
+            }
+        }
+    }
+
+    for sub in subdirs {
+        if let Some(loc) = search_dir_for_symbol(&sub, word, depth + 1, max_depth) {
+            return Some(loc);
+        }
+    }
+    None
+}
+
+pub fn find_std_or_crate_definition(word: &str) -> Option<crate::lsp::Location> {
+    if word.is_empty() {
+        return None;
+    }
+    let roots = get_source_search_roots();
+    for root in roots {
+        if let Some(loc) = search_dir_for_symbol(&root, word, 0, 4) {
+            return Some(loc);
+        }
+    }
+    None
 }

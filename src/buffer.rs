@@ -263,6 +263,54 @@ impl Buffer {
         }
     }
 
+    pub fn replace_char_at_cursor(&mut self, c: char) {
+        if self.anchor != self.cursor {
+            let (start, end) = self.selection_bounds();
+            if start.row == end.row {
+                let mut chars: Vec<char> = self.lines[start.row].chars().collect();
+                let start_idx = start.col.min(chars.len());
+                let end_idx = end.col.min(chars.len());
+                for ch in &mut chars[start_idx..end_idx] {
+                    *ch = c;
+                }
+                self.lines[start.row] = chars.into_iter().collect();
+                self.modified = true;
+                self.needs_reparse = true;
+            } else {
+                for r in start.row..=end.row.min(self.lines.len().saturating_sub(1)) {
+                    let mut chars: Vec<char> = self.lines[r].chars().collect();
+                    if r == start.row {
+                        let start_idx = start.col.min(chars.len());
+                        for ch in &mut chars[start_idx..] {
+                            *ch = c;
+                        }
+                    } else if r == end.row {
+                        let end_idx = end.col.min(chars.len());
+                        for ch in &mut chars[..end_idx] {
+                            *ch = c;
+                        }
+                    } else {
+                        chars.fill(c);
+                    }
+                    self.lines[r] = chars.into_iter().collect();
+                }
+                self.modified = true;
+                self.needs_reparse = true;
+            }
+        } else {
+            let row = self.cursor.row;
+            if row < self.lines.len() {
+                let mut chars: Vec<char> = self.lines[row].chars().collect();
+                if self.cursor.col < chars.len() {
+                    chars[self.cursor.col] = c;
+                    self.lines[row] = chars.into_iter().collect();
+                    self.modified = true;
+                    self.needs_reparse = true;
+                }
+            }
+        }
+    }
+
     pub fn delete_selection(&mut self, clipboard: &mut String) {
         if self.anchor == self.cursor {
             let row = self.cursor.row;

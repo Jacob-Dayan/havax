@@ -162,6 +162,7 @@ fn test_multi_buffer_switching() {
         prev_buffer_idx: 0,
         active_completion_req: 0,
         pending_c: false,
+        pending_r: false,
     };
 
     assert_eq!(editor.current_buffer, 0);
@@ -309,6 +310,7 @@ fn test_config_commands_open_and_reload() {
         prev_buffer_idx: 0,
         active_completion_req: 0,
         pending_c: false,
+        pending_r: false,
     };
 
     // Execute :config-open (replaces empty unnamed buffer)
@@ -370,6 +372,7 @@ fn test_visual_mode_and_vgl_motion() {
         prev_buffer_idx: 0,
         active_completion_req: 0,
         pending_c: false,
+        pending_r: false,
     };
 
     // 1. Press 'v' to enter visual mode
@@ -530,6 +533,7 @@ fn test_lsp_and_tree_sitter_commands() {
         prev_buffer_idx: 0,
         active_completion_req: 0,
         pending_c: false,
+        pending_r: false,
     };
 
     // Execute :lsp-restart
@@ -706,6 +710,7 @@ fn test_editor_completion_trigger_and_acceptance() {
         prev_buffer_idx: 0,
         active_completion_req: 0,
         pending_c: false,
+        pending_r: false,
     };
 
     // Trigger completion for "Strin"
@@ -751,6 +756,7 @@ fn test_editor_insert_mode_completion_keybindings() {
         prev_buffer_idx: 0,
         active_completion_req: 0,
         pending_c: false,
+        pending_r: false,
     };
 
     editor.trigger_completion();
@@ -837,6 +843,7 @@ fn test_command_pwd() {
         prev_buffer_idx: 0,
         active_completion_req: 0,
         pending_c: false,
+        pending_r: false,
     };
 
     let res = editor.execute_command();
@@ -888,6 +895,7 @@ fn test_command_cd() {
         prev_buffer_idx: 0,
         active_completion_req: 0,
         pending_c: false,
+        pending_r: false,
     };
 
     let res = editor.execute_command();
@@ -937,6 +945,7 @@ fn test_command_set_language() {
         prev_buffer_idx: 0,
         active_completion_req: 0,
         pending_c: false,
+        pending_r: false,
     };
 
     // 1. Set language to rust
@@ -1025,6 +1034,7 @@ fn test_helix_yank_clipboard_yank_and_paste_newline_and_paste_here() {
         prev_buffer_idx: 0,
         active_completion_req: 0,
         pending_c: false,
+        pending_r: false,
     };
 
     // 1. Test 'y' in Normal mode (yanks whole line when anchor == cursor)
@@ -1183,6 +1193,7 @@ fn test_match_mode_goto_matching_bracket() {
         prev_buffer_idx: 0,
         active_completion_req: 0,
         pending_c: false,
+        pending_r: false,
     };
 
     // 1. Press 'm' to enter Match mode
@@ -1245,6 +1256,7 @@ fn test_match_mode_surround_add_delete_replace() {
         prev_buffer_idx: 0,
         active_completion_req: 0,
         pending_c: false,
+        pending_r: false,
     };
 
     // 1. Surround add quotes: 'm', 's', '"'
@@ -1328,6 +1340,7 @@ fn test_match_mode_select_around_and_inside() {
         prev_buffer_idx: 0,
         active_completion_req: 0,
         pending_c: false,
+        pending_r: false,
     };
 
     // 1. Select inside bracket: 'm', 'i', '['
@@ -1515,6 +1528,7 @@ fn test_command_mode_interactive_completions_and_tab_cycling() {
         prev_buffer_idx: 0,
         active_completion_req: 0,
         pending_c: false,
+        pending_r: false,
     };
 
     // 1st Tab -> auto-completes to first match (config-open)
@@ -1573,6 +1587,7 @@ fn test_command_new_buffer_and_write_path() {
         prev_buffer_idx: 0,
         active_completion_req: 0,
         pending_c: false,
+        pending_r: false,
     };
 
     // Execute :new
@@ -1704,6 +1719,7 @@ fn test_redo_with_shift_u_and_ctrl_arrow_word_navigation() {
         prev_buffer_idx: 0,
         active_completion_req: 0,
         pending_c: false,
+        pending_r: false,
     };
 
     // 1. Test Ctrl+Right and Ctrl+Left word skipping in Normal Mode
@@ -1842,6 +1858,7 @@ fn test_auto_import_insertion_on_completion_acceptance() {
         match_state: types::MatchState::Menu,
         match_return_mode: types::Mode::Normal,
         pending_c: false,
+        pending_r: false,
         file_picker: None,
         lsp: None,
         toml_lsp: None,
@@ -1985,6 +2002,7 @@ fn test_command_write_preserves_editor_running_and_bufferline() {
         prev_buffer_idx: 0,
         active_completion_req: 0,
         pending_c: false,
+        pending_r: false,
     };
 
     // Mark buffer as modified
@@ -2079,6 +2097,7 @@ auto-format = false
         prev_buffer_idx: 0,
         active_completion_req: 0,
         pending_c: false,
+        pending_r: false,
     };
 
     editor.buf_mut().modified = true;
@@ -2144,6 +2163,7 @@ fn test_string_scoped_completions_and_method_completions() {
         prev_buffer_idx: 0,
         active_completion_req: 0,
         pending_c: false,
+        pending_r: false,
     };
 
     // 1. Test `String::` triggers completion with all associated functions
@@ -2315,6 +2335,7 @@ fn test_helix_goto_table_and_buffer_actions() {
         prev_buffer_idx: 0,
         active_completion_req: 0,
         pending_c: false,
+        pending_r: false,
     };
 
     // 1. Pressing 'g' enters Goto mode
@@ -2527,6 +2548,7 @@ fn test_idle_whitespace_no_inline_keyword_completions() {
         prev_buffer_idx: 0,
         active_completion_req: 0,
         pending_c: false,
+        pending_r: false,
     };
 
     // When cursor is on whitespace without typing prefix, completion must NOT be shown
@@ -2605,6 +2627,7 @@ fn test_treesitter_custom_struct_enum_and_method_ast_completions() {
         prev_buffer_idx: 0,
         active_completion_req: 0,
         pending_c: false,
+        pending_r: false,
     };
 
     // 1. Dynamic dot method completion for custom `user.`
@@ -2747,6 +2770,7 @@ fn test_snippet_template_expansion_struct_enum_fn_closure() {
         prev_buffer_idx: 0,
         active_completion_req: 0,
         pending_c: false,
+        pending_r: false,
     };
 
     // Trigger completion for "stru" -> accepts struct template
@@ -2817,6 +2841,7 @@ fn test_trait_implementation_autocomplete_methods() {
         prev_buffer_idx: 0,
         active_completion_req: 0,
         pending_c: false,
+        pending_r: false,
     };
 
     editor.trigger_completion();
@@ -2896,6 +2921,7 @@ fn test_clipboard_yank_command_and_aliases() {
         prev_buffer_idx: 0,
         active_completion_req: 0,
         pending_c: false,
+        pending_r: false,
     };
 
     // 1. Test :clipboard-yank on visual selection
@@ -3034,6 +3060,7 @@ fn test_scoped_double_colon_dynamic_ast_and_lsp_autocompletion() {
         prev_buffer_idx: 0,
         active_completion_req: 0,
         pending_c: false,
+        pending_r: false,
     };
 
     editor.trigger_completion();
@@ -3088,6 +3115,7 @@ fn test_helix_leader_mode_and_actions() {
         prev_buffer_idx: 0,
         active_completion_req: 0,
         pending_c: false,
+        pending_r: false,
     };
 
     let _ = editor.handle_key(KeyCode::Char(' '), KeyModifiers::NONE);
@@ -3142,6 +3170,210 @@ fn test_helix_leader_mode_and_actions() {
 
     let _ = std::fs::remove_dir_all(&temp_dir);
 }
+
+#[test]
+fn test_ratatui_render_all_modes_and_popups() {
+    let temp_dir = std::env::temp_dir().join(format!("havax_test_ratatui_{}", std::process::id()));
+    let _ = std::fs::create_dir_all(&temp_dir);
+    let test_file = temp_dir.join("test_ratatui.rs");
+    std::fs::write(&test_file, "fn main() {\n    println!(\"hello\");\n}\n").unwrap();
+
+    let buf = Buffer::new(test_file).unwrap();
+    let mut editor = Editor {
+        buffers: vec![buf],
+        current_buffer: 0,
+        mode: Mode::Normal,
+        goto_return_mode: Mode::Normal,
+        match_return_mode: Mode::Normal,
+        match_state: MatchState::Menu,
+        clipboard: String::new(),
+        command_buffer: String::new(),
+        command_prefix: None,
+        command_completion_idx: 0,
+        status_message: Some(("Ready".to_string(), false)),
+        file_picker: None,
+        stdout: std::io::stdout(),
+        config: Config {
+            theme: "one-half-dark".to_string(),
+            editor: EditorConfig::default(),
+        },
+        config_path: None,
+        theme: Theme::default(),
+        lsp: None,
+        toml_lsp: None,
+        completion: havax::completion::CompletionMenu::new(),
+        lsp_doc_version: 1,
+        prev_buffer_idx: 0,
+        active_completion_req: 0,
+        pending_c: false,
+        pending_r: false,
+    };
+
+    let render_res = editor.render();
+    assert!(render_res.is_ok());
+
+    editor.mode = Mode::Insert;
+    assert!(editor.render().is_ok());
+
+    editor.mode = Mode::Visual;
+    assert!(editor.render().is_ok());
+
+    editor.mode = Mode::Leader;
+    assert!(editor.render().is_ok());
+
+    editor.mode = Mode::Goto;
+    assert!(editor.render().is_ok());
+
+    editor.mode = Mode::Match;
+    editor.match_state = MatchState::Menu;
+    assert!(editor.render().is_ok());
+
+    editor.mode = Mode::Command;
+    editor.command_buffer = "w".to_string();
+    assert!(editor.render().is_ok());
+
+    editor.file_picker = Some(FilePicker::new(temp_dir.clone()));
+    assert!(editor.render().is_ok());
+    editor.file_picker = None;
+
+    editor.completion.visible = true;
+    editor.completion.items = vec![havax::lsp::CompletionItem {
+        label: "clone".to_string(),
+        detail: Some("fn clone(&self)".to_string()),
+        kind_name: "Method".to_string(),
+        insert_text: None,
+    }];
+    assert!(editor.render().is_ok());
+
+    editor.mode = Mode::Replace;
+    assert!(editor.render().is_ok());
+
+    let _ = std::fs::remove_dir_all(&temp_dir);
+}
+
+#[test]
+fn test_replace_char_normal_and_visual_mode() {
+    let mut buf = Buffer::new(PathBuf::from("scratch")).unwrap();
+    buf.lines = vec!["abcdef".to_string()];
+    buf.cursor = Position { row: 0, col: 2 };
+    buf.anchor = buf.cursor;
+
+    let mut editor = Editor {
+        buffers: vec![buf],
+        current_buffer: 0,
+        mode: Mode::Normal,
+        goto_return_mode: Mode::Normal,
+        match_return_mode: Mode::Normal,
+        match_state: MatchState::Menu,
+        clipboard: String::new(),
+        command_buffer: String::new(),
+        command_prefix: None,
+        command_completion_idx: 0,
+        status_message: None,
+        file_picker: None,
+        stdout: std::io::stdout(),
+        config: Config {
+            theme: "one-half-dark".to_string(),
+            editor: EditorConfig::default(),
+        },
+        config_path: None,
+        theme: Theme::default(),
+        lsp: None,
+        toml_lsp: None,
+        completion: havax::completion::CompletionMenu::new(),
+        lsp_doc_version: 1,
+        prev_buffer_idx: 0,
+        active_completion_req: 0,
+        pending_c: false,
+        pending_r: false,
+    };
+
+    let _ = editor.handle_key(KeyCode::Char('r'), KeyModifiers::NONE);
+    assert!(editor.pending_r);
+    let _ = editor.handle_key(KeyCode::Char('Z'), KeyModifiers::NONE);
+    assert!(!editor.pending_r);
+    assert_eq!(editor.buf().lines[0], "abZdef");
+    assert_eq!(editor.buf().cursor, Position { row: 0, col: 2 });
+
+    editor.mode = Mode::Visual;
+    editor.buf_mut().anchor = Position { row: 0, col: 1 };
+    editor.buf_mut().cursor = Position { row: 0, col: 4 };
+
+    let _ = editor.handle_key(KeyCode::Char('r'), KeyModifiers::NONE);
+    assert!(editor.pending_r);
+    let _ = editor.handle_key(KeyCode::Char('X'), KeyModifiers::NONE);
+    assert!(!editor.pending_r);
+    assert_eq!(editor.mode, Mode::Normal);
+    assert_eq!(editor.buf().lines[0], "aXXXef");
+}
+
+#[test]
+fn test_replace_mode_enter_edit_and_exit() {
+    let mut buf = Buffer::new(PathBuf::from("scratch")).unwrap();
+    buf.lines = vec!["hello world".to_string()];
+    buf.cursor = Position { row: 0, col: 6 };
+    buf.anchor = buf.cursor;
+
+    let mut editor = Editor {
+        buffers: vec![buf],
+        current_buffer: 0,
+        mode: Mode::Normal,
+        goto_return_mode: Mode::Normal,
+        match_return_mode: Mode::Normal,
+        match_state: MatchState::Menu,
+        clipboard: String::new(),
+        command_buffer: String::new(),
+        command_prefix: None,
+        command_completion_idx: 0,
+        status_message: None,
+        file_picker: None,
+        stdout: std::io::stdout(),
+        config: Config {
+            theme: "one-half-dark".to_string(),
+            editor: EditorConfig::default(),
+        },
+        config_path: None,
+        theme: Theme::default(),
+        lsp: None,
+        toml_lsp: None,
+        completion: havax::completion::CompletionMenu::new(),
+        lsp_doc_version: 1,
+        prev_buffer_idx: 0,
+        active_completion_req: 0,
+        pending_c: false,
+        pending_r: false,
+    };
+
+    let _ = editor.handle_key(KeyCode::Char('R'), KeyModifiers::NONE);
+    assert_eq!(editor.mode, Mode::Replace);
+
+    let _ = editor.handle_key(KeyCode::Char('p'), KeyModifiers::NONE);
+    let _ = editor.handle_key(KeyCode::Char('l'), KeyModifiers::NONE);
+    let _ = editor.handle_key(KeyCode::Char('a'), KeyModifiers::NONE);
+    let _ = editor.handle_key(KeyCode::Char('n'), KeyModifiers::NONE);
+    let _ = editor.handle_key(KeyCode::Char('e'), KeyModifiers::NONE);
+
+    assert_eq!(editor.buf().lines[0], "hello plane");
+    assert_eq!(editor.buf().cursor, Position { row: 0, col: 11 });
+
+    let _ = editor.handle_key(KeyCode::Char('R'), KeyModifiers::NONE);
+    assert_eq!(editor.mode, Mode::Normal);
+
+    let _ = editor.handle_key(KeyCode::Char('R'), KeyModifiers::NONE);
+    assert_eq!(editor.mode, Mode::Replace);
+    let _ = editor.handle_key(KeyCode::Char('t'), KeyModifiers::NONE);
+    assert_eq!(editor.buf().lines[0], "hello plant");
+    let _ = editor.handle_key(KeyCode::Esc, KeyModifiers::NONE);
+    assert_eq!(editor.mode, Mode::Normal);
+}
+
+#[test]
+fn test_find_std_or_crate_definition() {
+    let roots = Editor::get_source_search_roots();
+    assert!(!roots.is_empty());
+}
+
+
 
 
 

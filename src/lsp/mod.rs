@@ -565,6 +565,26 @@ fn path_to_uri(path: &Path) -> String {
     }
 }
 
+fn decode_percent(s: &str) -> String {
+    let mut result = Vec::new();
+    let bytes = s.as_bytes();
+    let mut i = 0;
+    while i < bytes.len() {
+        if bytes[i] == b'%'
+            && i + 2 < bytes.len()
+            && let Ok(val) =
+                u8::from_str_radix(std::str::from_utf8(&bytes[i + 1..i + 3]).unwrap_or(""), 16)
+        {
+            result.push(val);
+            i += 3;
+            continue;
+        }
+        result.push(bytes[i]);
+        i += 1;
+    }
+    String::from_utf8_lossy(&result).into_owned()
+}
+
 fn uri_to_path(uri: &str) -> Option<PathBuf> {
     let stripped = uri.strip_prefix("file://")?;
     let path_str = if stripped.starts_with('/') && stripped.chars().nth(2) == Some(':') {
@@ -572,7 +592,8 @@ fn uri_to_path(uri: &str) -> Option<PathBuf> {
     } else {
         stripped
     };
-    Some(PathBuf::from(path_str))
+    let decoded = decode_percent(path_str);
+    Some(PathBuf::from(decoded))
 }
 
 pub fn find_rust_analyzer() -> Option<PathBuf> {

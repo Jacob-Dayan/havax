@@ -13,6 +13,7 @@ pub enum Mode {
     Visual,
     Match,
     Leader,
+    Replace,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
