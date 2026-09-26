@@ -38,15 +38,33 @@ impl Editor {
             CursorShape::Block => SetCursorStyle::SteadyBlock,
             CursorShape::Underline => SetCursorStyle::SteadyUnderScore,
         };
-        execute!(self.stdout, cursor_style)?;
+        let _ = execute!(self.stdout, cursor_style);
 
+        let mut stdout = std::mem::replace(&mut self.stdout, std::io::stdout());
+        let res = {
+            let backend = CrosstermBackend::new(&mut stdout);
+            let mut terminal = Terminal::new(backend)?;
+            self.render_to_terminal(&mut terminal)
+        };
+        self.stdout = stdout;
+        res
+    }
+
+    pub fn render_to_terminal<B: ratatui::backend::Backend>(
+        &mut self,
+        terminal: &mut Terminal<B>,
+    ) -> Result<(), Box<dyn Error>>
+    where
+        <B as ratatui::backend::Backend>::Error: 'static,
+    {
         let show_tab_bar = match self.config.editor.bufferline {
             Bufferline::Always => true,
             Bufferline::Multiple => self.buffers.len() > 1,
             Bufferline::Never => false,
         };
 
-        let (cols, rows) = crossterm::terminal::size()?;
+        let term_size = terminal.size()?;
+        let (cols, rows) = (term_size.width, term_size.height);
         let current_buf = &mut self.buffers[self.current_buffer];
         let max_digits = current_buf.lines.len().max(1).to_string().len().max(2);
         let gutter_width = 2 + max_digits + 2;
@@ -73,9 +91,6 @@ impl Editor {
 
         let diag_map: std::collections::HashMap<usize, &crate::lsp::Diagnostic> =
             diagnostics.iter().map(|d| (d.line, d)).collect();
-
-        let backend = CrosstermBackend::new(&mut self.stdout);
-        let mut terminal = Terminal::new(backend)?;
 
         let theme = &self.theme;
         let config = &self.config;

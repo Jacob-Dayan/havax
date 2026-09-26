@@ -3209,31 +3209,34 @@ fn test_ratatui_render_all_modes_and_popups() {
         pending_r: false,
     };
 
-    let render_res = editor.render();
+    let backend = ratatui::backend::TestBackend::new(100, 30);
+    let mut terminal = ratatui::Terminal::new(backend).unwrap();
+
+    let render_res = editor.render_to_terminal(&mut terminal);
     assert!(render_res.is_ok());
 
     editor.mode = Mode::Insert;
-    assert!(editor.render().is_ok());
+    assert!(editor.render_to_terminal(&mut terminal).is_ok());
 
     editor.mode = Mode::Visual;
-    assert!(editor.render().is_ok());
+    assert!(editor.render_to_terminal(&mut terminal).is_ok());
 
     editor.mode = Mode::Leader;
-    assert!(editor.render().is_ok());
+    assert!(editor.render_to_terminal(&mut terminal).is_ok());
 
     editor.mode = Mode::Goto;
-    assert!(editor.render().is_ok());
+    assert!(editor.render_to_terminal(&mut terminal).is_ok());
 
     editor.mode = Mode::Match;
     editor.match_state = MatchState::Menu;
-    assert!(editor.render().is_ok());
+    assert!(editor.render_to_terminal(&mut terminal).is_ok());
 
     editor.mode = Mode::Command;
     editor.command_buffer = "w".to_string();
-    assert!(editor.render().is_ok());
+    assert!(editor.render_to_terminal(&mut terminal).is_ok());
 
     editor.file_picker = Some(FilePicker::new(temp_dir.clone()));
-    assert!(editor.render().is_ok());
+    assert!(editor.render_to_terminal(&mut terminal).is_ok());
     editor.file_picker = None;
 
     editor.completion.visible = true;
@@ -3243,10 +3246,10 @@ fn test_ratatui_render_all_modes_and_popups() {
         kind_name: "Method".to_string(),
         insert_text: None,
     }];
-    assert!(editor.render().is_ok());
+    assert!(editor.render_to_terminal(&mut terminal).is_ok());
 
     editor.mode = Mode::Replace;
-    assert!(editor.render().is_ok());
+    assert!(editor.render_to_terminal(&mut terminal).is_ok());
 
     let _ = std::fs::remove_dir_all(&temp_dir);
 }
