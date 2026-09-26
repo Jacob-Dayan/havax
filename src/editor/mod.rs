@@ -1,4 +1,5 @@
 use std::{
+    collections::HashMap,
     error::Error,
     fs,
     io::{Stdout, Write, stdout},
@@ -55,6 +56,10 @@ pub struct Editor {
     pub pending_r: bool,
     pub prev_buffer_idx: usize,
     pub active_completion_req: u64,
+    pub diagnostics: HashMap<PathBuf, Vec<crate::lsp::Diagnostic>>,
+    pub active_completion_version: i32,
+    pub pending_definition_req: Option<(u64, PathBuf, i32, String)>,
+    pub pending_lsp_change: Option<(usize, std::time::Instant)>,
 }
 
 impl Editor {
@@ -108,6 +113,10 @@ impl Editor {
             pending_r: false,
             prev_buffer_idx: 0,
             active_completion_req: 0,
+            diagnostics: HashMap::new(),
+            active_completion_version: 1,
+            pending_definition_req: None,
+            pending_lsp_change: None,
         };
 
         editor.notify_lsp_open();
@@ -264,27 +273,45 @@ impl Editor {
 
     pub fn notify_lsp_change(&mut self) {
         self.lsp_doc_version += 1;
-        let ver = self.lsp_doc_version;
-        let b = self.buf();
-        if b.path.as_os_str().is_empty() {
+        self.buf_mut().version += 1;
+        self.pending_lsp_change = Some((self.current_buffer, std::time::Instant::now()));
+    }
+
+    pub fn flush_debounced_lsp_change(&mut self, force: bool) {
+        let buf_idx = match self.pending_lsp_change {
+            Some((idx, instant))
+                if force || instant.elapsed() >= std::time::Duration::from_millis(35) =>
+            {
+                self.pending_lsp_change = None;
+                idx
+            }
+            _ => return,
+        };
+        let Some(buf) = self.buffers.get(buf_idx) else {
+            return;
+        };
+        if buf.path.as_os_str().is_empty() {
             return;
         }
-        match b.language() {
+        let ver = buf.version;
+        let text = buf.lines.join("\n");
+        match buf.language() {
             "rust" => {
                 if let Some(lsp) = &self.lsp {
-                    lsp.notify_change(&b.path, ver, &b.lines.join("\n"));
+                    lsp.notify_change(&buf.path, ver, &text);
                 }
             }
             "toml" => {
                 if let Some(lsp) = &self.toml_lsp {
-                    lsp.notify_change(&b.path, ver, &b.lines.join("\n"));
+                    lsp.notify_change(&buf.path, ver, &text);
                 }
             }
             _ => {}
         }
     }
 
-    pub fn notify_lsp_save(&self) {
+    pub fn notify_lsp_save(&mut self) {
+        self.flush_debounced_lsp_change(true);
         let b = self.buf();
         if b.path.as_os_str().is_empty() {
             return;
@@ -305,9 +332,11 @@ impl Editor {
     }
 
     pub fn trigger_completion(&mut self) {
+        self.flush_debounced_lsp_change(true);
         if self.buf().needs_reparse || self.buf().tree.is_none() {
             self.buf_mut().reparse();
         }
+        let doc_version = self.buf().version;
         let (
             path,
             row,
@@ -335,7 +364,6 @@ impl Editor {
             let chars: Vec<char> = line.chars().collect();
             let cur_col = col.min(chars.len());
 
-            // Check for scoped path ending before cursor, e.g. "String::", "std::fs::", "collections::" (Rust only)
             let mut scope_path = None;
             let mut dot_call = None;
             let mut filter_start = cur_col;
@@ -362,7 +390,6 @@ impl Editor {
                 && chars[filter_start - 1] == ':'
                 && chars[filter_start - 2] == ':'
             {
-                // Find scope before '::'
                 let mut scope_start = filter_start - 2;
                 while scope_start > 0 {
                     let prev_ch = chars[scope_start - 1];
@@ -377,7 +404,6 @@ impl Editor {
                     scope_path = Some(raw_scope);
                 }
             } else if is_rust && filter_start >= 1 && chars[filter_start - 1] == '.' {
-                // Find receiver before '.'
                 let mut receiver_end = filter_start - 1;
                 while receiver_end > 0 && chars[receiver_end - 1].is_whitespace() {
                     receiver_end -= 1;
@@ -419,9 +445,8 @@ impl Editor {
         let is_dot = dot_call.is_some();
 
         let trigger_col = filter_start;
-        let mut items = Vec::new();
+        let mut items: Vec<crate::lsp::CompletionItem> = Vec::new();
 
-        // 1. Language Server (rust-analyzer / taplo): Primary source of completions
         let lsp_client = if is_rust {
             self.lsp.as_ref()
         } else if is_toml {
@@ -438,21 +463,11 @@ impl Editor {
             } else {
                 None
             };
-            let req_id = lsp.request_completion(&path, row, cur_col, trigger_char);
+            let req_id = lsp.request_completion(&path, doc_version, row, cur_col, trigger_char);
             self.active_completion_req = req_id;
-            if let Some(lsp_items) = lsp.get_completions_for(req_id) {
-                for item in lsp_items {
-                    if !items
-                        .iter()
-                        .any(|it: &crate::lsp::CompletionItem| it.label == item.label)
-                    {
-                        items.push(item);
-                    }
-                }
-            }
+            self.active_completion_version = doc_version;
         }
 
-        // 2. Tree-Sitter AST symbol extraction
         let tree_ref = self.buf().tree.as_ref();
         if is_rust {
             let trait_items = crate::lsp::collect_trait_impl_completions(
@@ -497,7 +512,6 @@ impl Editor {
                 }
             }
 
-            // Fallback standard symbols & keywords
             if is_rust {
                 for item in crate::lsp::get_standard_rust_completions(&filter_prefix) {
                     if !items.iter().any(|it| it.label == item.label) {
@@ -529,6 +543,7 @@ impl Editor {
                                 "struct".to_string()
                             },
                             insert_text: Some(word.to_string()),
+                            additional_text_edits: Vec::new(),
                         });
                     }
                 }
@@ -605,8 +620,9 @@ impl Editor {
                 buf.modified = true;
                 buf.needs_reparse = true;
 
-                // Auto-import insertion if applicable
-                if let Some(import_path) = auto_import_opt {
+                if !item.additional_text_edits.is_empty() {
+                    Self::apply_additional_text_edits(buf, &item.additional_text_edits);
+                } else if let Some(import_path) = auto_import_opt {
                     let short_name = import_path.split("::").last().unwrap_or(&import_path);
                     let use_statement = format!("use {import_path};");
                     let already_imported = buf.lines.iter().any(|l| {
@@ -618,7 +634,6 @@ impl Editor {
                     });
 
                     if !already_imported {
-                        // Find insertion point at head of file
                         let mut insert_row = 0;
                         let mut last_use_row = None;
                         for (idx, line) in buf.lines.iter().enumerate() {
@@ -648,6 +663,95 @@ impl Editor {
         }
         self.completion.close();
         self.notify_lsp_change();
+    }
+
+pub fn apply_additional_text_edits(buf: &mut Buffer, edits: &[crate::lsp::TextEdit]) {
+    let mut sorted_edits = edits.to_vec();
+    sorted_edits.sort_by(|a, b| {
+        b.start_line
+            .cmp(&a.start_line)
+            .then_with(|| b.start_col.cmp(&a.start_col))
+    });
+
+    for edit in sorted_edits {
+        if edit.start_line > buf.lines.len() {
+            continue;
+        }
+        let end_line = edit.end_line.min(buf.lines.len().saturating_sub(1));
+        let start_line = edit.start_line.min(end_line);
+
+        let prefix = if start_line < buf.lines.len() {
+            let line_chars: Vec<char> = buf.lines[start_line].chars().collect();
+            let safe_col = edit.start_col.min(line_chars.len());
+            line_chars[..safe_col].iter().collect::<String>()
+        } else {
+            String::new()
+        };
+
+        let suffix = if end_line < buf.lines.len() {
+            let line_chars: Vec<char> = buf.lines[end_line].chars().collect();
+            let safe_col = edit.end_col.min(line_chars.len());
+            line_chars[safe_col..].iter().collect::<String>()
+        } else {
+            String::new()
+        };
+
+        let new_lines: Vec<&str> = edit.new_text.split('\n').collect();
+        let old_line_count = end_line - start_line + 1;
+        let new_line_count = new_lines.len();
+
+        let mut replaced = Vec::new();
+        if new_lines.len() == 1 {
+            replaced.push(format!("{prefix}{}{suffix}", new_lines[0]));
+        } else {
+            replaced.push(format!("{prefix}{}", new_lines[0]));
+            for mid in &new_lines[1..new_lines.len() - 1] {
+                replaced.push((*mid).to_string());
+            }
+            replaced.push(format!("{}{suffix}", new_lines.last().unwrap_or(&"")));
+        }
+
+        if start_line < buf.lines.len() {
+            buf.lines.splice(start_line..=end_line, replaced);
+        } else {
+            buf.lines.extend(replaced);
+        }
+
+        if edit.start_line <= buf.cursor.row {
+            if new_line_count >= old_line_count {
+                buf.cursor.row += new_line_count - old_line_count;
+                buf.anchor.row += new_line_count - old_line_count;
+            } else {
+                let diff = old_line_count - new_line_count;
+                buf.cursor.row = buf.cursor.row.saturating_sub(diff);
+                buf.anchor.row = buf.anchor.row.saturating_sub(diff);
+            }
+        }
+    }
+    buf.clamp_cursor();
+    buf.anchor = buf.cursor;
+    buf.needs_reparse = true;
+}
+
+    pub fn get_buffer_diagnostics(
+        &self,
+        path: &std::path::Path,
+        _lsp: Option<&LspClient>,
+    ) -> Vec<crate::lsp::Diagnostic> {
+        if let Some(diags) = self.diagnostics.get(path) {
+            return diags.clone();
+        }
+        for (p, diags) in &self.diagnostics {
+            if p == path || p.ends_with(path) || path.ends_with(p) {
+                return diags.clone();
+            }
+            if let (Some(f1), Some(f2)) = (p.file_name(), path.file_name())
+                && f1 == f2
+            {
+                return diags.clone();
+            }
+        }
+        Vec::new()
     }
 
     pub fn set_status(&mut self, msg: &str, is_error: bool) {
@@ -821,12 +925,15 @@ impl Editor {
     }
 
     pub fn goto_definition(&mut self) -> Result<(), Box<dyn Error>> {
+        self.flush_debounced_lsp_change(true);
         let buf = self.buf();
         let row = buf.cursor.row;
         let col = buf.cursor.col;
         let path = buf.path.clone();
+        let doc_ver = buf.version;
         let is_rust = buf.language() == "rust";
         let is_toml = buf.language() == "toml";
+        let word = buf.get_word_at_cursor();
 
         let lsp_client = if is_rust {
             self.lsp.as_ref()
@@ -837,137 +944,126 @@ impl Editor {
         };
 
         if let Some(lsp) = lsp_client {
-            let req_id = lsp.request_definition(&path, row, col);
-            let start = std::time::Instant::now();
-            while start.elapsed() < std::time::Duration::from_millis(400) {
-                if let Some(loc) = lsp.get_definition_for(req_id) {
-                    self.jump_to_location(&loc)?;
-                    self.set_status(
-                        &format!("Jumped to {}:{}", loc.path.display(), loc.line + 1),
-                        false,
-                    );
-                    return Ok(());
-                }
-                std::thread::sleep(std::time::Duration::from_millis(10));
-            }
+            let req_id = lsp.request_definition(&path, doc_ver, row, col);
+            self.pending_definition_req = Some((req_id, path, doc_ver, word));
+            self.set_status("Locating definition...", false);
+            return Ok(());
         }
 
-        let word = self.buf().get_word_at_cursor();
-        if !word.is_empty() {
-            let found = self.buf().lines.iter().enumerate().find_map(|(idx, line)| {
-                if (line.contains(&format!("fn {word}"))
-                    || line.contains(&format!("struct {word}"))
-                    || line.contains(&format!("enum {word}"))
-                    || line.contains(&format!("type {word}"))
-                    || line.contains(&format!("trait {word}"))
-                    || line.contains(&format!("mod {word}")))
-                    && idx != row
-                {
-                    let col = line.find(&word).unwrap_or(0);
-                    Some((idx, col))
-                } else {
-                    None
-                }
-            });
-            if let Some((target_row, target_col)) = found {
-                let target_pos = Position {
-                    row: target_row,
-                    col: target_col,
-                };
-                let buf = self.buf_mut();
-                buf.cursor = target_pos;
-                buf.anchor = target_pos;
-                self.set_status(
-                    &format!("Jumped to definition on line {}", target_row + 1),
-                    false,
-                );
-                return Ok(());
-            }
-
-            if is_rust
-                && let Some(loc) = find_std_or_crate_definition(&word) {
-                self.jump_to_location(&loc)?;
-                self.set_status(
-                    &format!("Jumped to {}:{}", loc.path.display(), loc.line + 1),
-                    false,
-                );
-                return Ok(());
-            }
-        }
-        self.set_status("No definition found", false);
+        self.fallback_definition_search(&word);
         Ok(())
     }
 
     pub fn goto_type_definition(&mut self) -> Result<(), Box<dyn Error>> {
+        self.flush_debounced_lsp_change(true);
         let buf = self.buf();
         let row = buf.cursor.row;
         let col = buf.cursor.col;
         let path = buf.path.clone();
+        let doc_ver = buf.version;
+        let word = buf.get_word_at_cursor();
         if let Some(lsp) = &self.lsp {
-            let req_id = lsp.request_type_definition(&path, row, col);
-            let start = std::time::Instant::now();
-            while start.elapsed() < std::time::Duration::from_millis(150) {
-                if let Some(loc) = lsp.get_definition_for(req_id) {
-                    self.jump_to_location(&loc)?;
-                    self.set_status(
-                        &format!("Jumped to type {}:{}", loc.path.display(), loc.line + 1),
-                        false,
-                    );
-                    return Ok(());
-                }
-                std::thread::sleep(std::time::Duration::from_millis(10));
-            }
+            let req_id = lsp.request_type_definition(&path, doc_ver, row, col);
+            self.pending_definition_req = Some((req_id, path, doc_ver, word));
+            self.set_status("Locating type definition...", false);
+            return Ok(());
         }
-        self.set_status("No type definition found", false);
+        self.fallback_definition_search(&word);
         Ok(())
     }
 
     pub fn goto_implementation(&mut self) -> Result<(), Box<dyn Error>> {
+        self.flush_debounced_lsp_change(true);
         let buf = self.buf();
         let row = buf.cursor.row;
         let col = buf.cursor.col;
         let path = buf.path.clone();
+        let doc_ver = buf.version;
+        let word = buf.get_word_at_cursor();
         if let Some(lsp) = &self.lsp {
-            let req_id = lsp.request_implementation(&path, row, col);
-            let start = std::time::Instant::now();
-            while start.elapsed() < std::time::Duration::from_millis(150) {
-                if let Some(loc) = lsp.get_definition_for(req_id) {
-                    self.jump_to_location(&loc)?;
-                    self.set_status(
-                        &format!("Jumped to impl {}:{}", loc.path.display(), loc.line + 1),
-                        false,
-                    );
-                    return Ok(());
-                }
-                std::thread::sleep(std::time::Duration::from_millis(10));
-            }
+            let req_id = lsp.request_implementation(&path, doc_ver, row, col);
+            self.pending_definition_req = Some((req_id, path, doc_ver, word));
+            self.set_status("Locating implementation...", false);
+            return Ok(());
         }
-        self.set_status("No implementation found", false);
+        self.fallback_definition_search(&word);
         Ok(())
     }
 
     pub fn goto_references(&mut self) -> Result<(), Box<dyn Error>> {
+        self.flush_debounced_lsp_change(true);
         let buf = self.buf();
         let row = buf.cursor.row;
         let col = buf.cursor.col;
         let path = buf.path.clone();
+        let doc_ver = buf.version;
+        let word = buf.get_word_at_cursor();
         if let Some(lsp) = &self.lsp {
-            let req_id = lsp.request_references(&path, row, col);
-            let start = std::time::Instant::now();
-            while start.elapsed() < std::time::Duration::from_millis(150) {
-                if let Some(loc) = lsp.get_definition_for(req_id) {
-                    self.jump_to_location(&loc)?;
-                    self.set_status(
-                        &format!("Jumped to ref {}:{}", loc.path.display(), loc.line + 1),
-                        false,
-                    );
-                    return Ok(());
-                }
-                std::thread::sleep(std::time::Duration::from_millis(10));
-            }
+            let req_id = lsp.request_references(&path, doc_ver, row, col);
+            self.pending_definition_req = Some((req_id, path, doc_ver, word));
+            self.set_status("Locating references...", false);
+            return Ok(());
         }
         self.set_status("No references found", false);
         Ok(())
+    }
+
+    pub fn fallback_definition_search(&mut self, word: &str) {
+        if word.is_empty() {
+            self.set_status("No definition found", false);
+            return;
+        }
+        let row = self.buf().cursor.row;
+        let is_rust = self.buf().language() == "rust";
+        let found = self.buf().lines.iter().enumerate().find_map(|(idx, line)| {
+            if (line.contains(&format!("fn {word}"))
+                || line.contains(&format!("struct {word}"))
+                || line.contains(&format!("enum {word}"))
+                || line.contains(&format!("type {word}"))
+                || line.contains(&format!("trait {word}"))
+                || line.contains(&format!("mod {word}")))
+                && idx != row
+            {
+                let col = line.find(word).unwrap_or(0);
+                Some((idx, col))
+            } else {
+                None
+            }
+        });
+        if let Some((target_row, target_col)) = found {
+            let target_pos = Position {
+                row: target_row,
+                col: target_col,
+            };
+            let buf = self.buf_mut();
+            buf.cursor = target_pos;
+            buf.anchor = target_pos;
+            self.set_status(
+                &format!("Jumped to definition on line {}", target_row + 1),
+                false,
+            );
+            return;
+        }
+
+        if is_rust
+            && let Some(lsp) = &self.lsp
+        {
+            let tx = lsp.event_tx.clone();
+            let word_owned = word.to_string();
+            let doc_ver = self.buf().version;
+            self.set_status("Searching external definitions in background...", false);
+            std::thread::spawn(move || {
+                let loc = find_std_or_crate_definition(&word_owned);
+                let _ = tx.send(crate::lsp::LspEvent::DefinitionResponse {
+                    id: 0,
+                    doc_version: doc_ver,
+                    location: loc,
+                });
+            });
+            return;
+        }
+
+        self.set_status("No definition found", false);
     }
 
     pub fn goto_file(&mut self) -> Result<(), Box<dyn Error>> {
@@ -1112,103 +1208,151 @@ impl Editor {
         self.command_buffer = chars.into_iter().collect();
     }
 
-    pub fn update_lsp_completions(&mut self) {
-        if self.mode != Mode::Insert {
+    pub fn poll_lsp_events(&mut self) -> bool {
+        let mut needs_redraw = false;
+
+        let events: Vec<crate::lsp::LspEvent> = {
+            let mut evs = Vec::new();
+            if let Some(lsp) = &self.lsp {
+                while let Ok(ev) = lsp.event_rx.try_recv() {
+                    evs.push(ev);
+                }
+            }
+            if let Some(toml_lsp) = &self.toml_lsp {
+                while let Ok(ev) = toml_lsp.event_rx.try_recv() {
+                    evs.push(ev);
+                }
+            }
+            evs
+        };
+
+        for ev in events {
+            if self.handle_single_lsp_event(ev) {
+                needs_redraw = true;
+            }
+        }
+
+        needs_redraw
+    }
+
+    pub fn handle_single_lsp_event(&mut self, ev: crate::lsp::LspEvent) -> bool {
+        match ev {
+            crate::lsp::LspEvent::PublishDiagnostics { path, diagnostics } => {
+                self.diagnostics.insert(path, diagnostics);
+                true
+            }
+            crate::lsp::LspEvent::CompletionResponse {
+                id,
+                doc_version,
+                items,
+            } => {
+                if id == self.active_completion_req {
+                    let cur_ver = self.buf().version;
+                    if doc_version == cur_ver {
+                        self.ingest_completion_items(items);
+                        return true;
+                    }
+                }
+                false
+            }
+            crate::lsp::LspEvent::DefinitionResponse {
+                id,
+                doc_version,
+                location,
+            } => {
+                if let Some((pending_id, path, pending_ver, word)) =
+                    self.pending_definition_req.take()
+                {
+                    if pending_id == id {
+                        let cur_ver = self.buf().version;
+                        if doc_version == cur_ver {
+                            if let Some(loc) = location {
+                                let _ = self.jump_to_location(&loc);
+                                self.set_status(
+                                    &format!("Jumped to {}:{}", loc.path.display(), loc.line + 1),
+                                    false,
+                                );
+                            } else {
+                                self.fallback_definition_search(&word);
+                            }
+                            return true;
+                        }
+                    } else {
+                        self.pending_definition_req = Some((pending_id, path, pending_ver, word));
+                    }
+                } else if id == 0 {
+                    let cur_ver = self.buf().version;
+                    if doc_version == cur_ver {
+                        if let Some(loc) = location {
+                            let _ = self.jump_to_location(&loc);
+                            self.set_status(
+                                &format!("Jumped to {}:{}", loc.path.display(), loc.line + 1),
+                                false,
+                            );
+                        } else {
+                            self.set_status("No definition found", false);
+                        }
+                        return true;
+                    }
+                }
+                false
+            }
+            crate::lsp::LspEvent::ServerExited => false,
+        }
+    }
+
+
+    fn ingest_completion_items(&mut self, items: Vec<crate::lsp::CompletionItem>) {
+        if items.is_empty() || self.mode != Mode::Insert {
             return;
         }
-        let is_rust = self.buf().language() == "rust";
-        let is_toml = self.buf().language() == "toml";
-        let lsp_client = if is_rust {
-            self.lsp.as_ref()
-        } else if is_toml {
-            self.toml_lsp.as_ref()
-        } else {
-            None
-        };
-        if let Some(lsp) = lsp_client
-            && let Some(lsp_items) = lsp.get_completions_for(self.active_completion_req)
-        {
-            if lsp_items.is_empty() {
-                return;
+        let buf = self.buf();
+        let row = buf.cursor.row;
+        let cur_col = buf.cursor.col;
+        let line = buf.lines.get(row).map(|s| s.as_str()).unwrap_or("");
+        let chars: Vec<char> = line.chars().collect();
+        let safe_col = cur_col.min(chars.len());
+
+        let trigger_col = self.completion.trigger_col.min(safe_col);
+        let filter: String = chars[trigger_col..safe_col].iter().collect();
+        let f_lower = filter.to_lowercase();
+
+        let mut matched_items = Vec::new();
+        for item in items {
+            let l_lower = item.label.to_lowercase();
+            let matches_filter = f_lower.is_empty()
+                || l_lower.starts_with(&f_lower)
+                || l_lower.contains(&f_lower)
+                || crate::lsp::fuzzy_match_score(&f_lower, &item.label).is_some();
+            if matches_filter
+                && !matched_items
+                    .iter()
+                    .any(|it: &crate::lsp::CompletionItem| it.label == item.label)
+            {
+                matched_items.push(item);
             }
-            let buf = self.buf();
-            let row = buf.cursor.row;
-            let cur_col = buf.cursor.col;
-            let line = buf.lines.get(row).map(|s| s.as_str()).unwrap_or("");
-            let chars: Vec<char> = line.chars().collect();
-            let safe_col = cur_col.min(chars.len());
+        }
 
-            let trigger_col = self.completion.trigger_col.min(safe_col);
-            let filter: String = chars[trigger_col..safe_col].iter().collect();
-            let f_lower = filter.to_lowercase();
-
-            let mut matched_items = Vec::new();
-            for item in lsp_items {
-                let l_lower = item.label.to_lowercase();
-                let matches_filter = f_lower.is_empty()
-                    || l_lower.starts_with(&f_lower)
-                    || l_lower.contains(&f_lower)
-                    || crate::lsp::fuzzy_match_score(&f_lower, &item.label).is_some();
-                if matches_filter
-                    && !matched_items
-                        .iter()
-                        .any(|it: &crate::lsp::CompletionItem| it.label == item.label)
-                {
-                    matched_items.push(item);
-                }
-            }
-
-            if !matched_items.is_empty() {
-                if self.completion.visible {
-                    for item in matched_items {
-                        if !self
-                            .completion
-                            .items
-                            .iter()
-                            .any(|it| it.label == item.label)
-                        {
-                            self.completion.items.push(item);
-                        }
+        if !matched_items.is_empty() {
+            if self.completion.visible {
+                for item in matched_items {
+                    if !self.completion.items.iter().any(|it| it.label == item.label) {
+                        self.completion.items.push(item);
                     }
-                } else {
-                    self.completion.show(trigger_col, &filter, matched_items);
                 }
+            } else {
+                self.completion.show(trigger_col, &filter, matched_items);
             }
         }
     }
 
     pub fn run_loop(&mut self) -> Result<(), Box<dyn Error>> {
         let mut needs_redraw = true;
-        let mut last_diag_ver = 0;
-        let mut last_comp_ver = 0;
 
         loop {
-            // Check if any LSP background diagnostics arrived
-            let current_diag_ver = self.lsp.as_ref().map(|l| l.diag_version()).unwrap_or(0)
-                + self
-                    .toml_lsp
-                    .as_ref()
-                    .map(|l| l.diag_version())
-                    .unwrap_or(0);
-            if current_diag_ver != last_diag_ver {
-                last_diag_ver = current_diag_ver;
-                needs_redraw = true;
-            }
+            self.flush_debounced_lsp_change(false);
 
-            // Check if any LSP background completions arrived
-            let current_comp_ver = self
-                .lsp
-                .as_ref()
-                .map(|l| l.completion_version())
-                .unwrap_or(0)
-                + self
-                    .toml_lsp
-                    .as_ref()
-                    .map(|l| l.completion_version())
-                    .unwrap_or(0);
-            if current_comp_ver != last_comp_ver {
-                last_comp_ver = current_comp_ver;
-                self.update_lsp_completions();
+            if self.poll_lsp_events() {
                 needs_redraw = true;
             }
 
@@ -1217,7 +1361,7 @@ impl Editor {
                 needs_redraw = false;
             }
 
-            if event::poll(std::time::Duration::from_millis(30))? {
+            if event::poll(std::time::Duration::from_millis(16))? {
                 match event::read()? {
                     Event::Key(key) => {
                         if key.kind == KeyEventKind::Press {

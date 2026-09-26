@@ -163,6 +163,10 @@ fn test_multi_buffer_switching() {
         active_completion_req: 0,
         pending_c: false,
         pending_r: false,
+        diagnostics: std::collections::HashMap::new(),
+        active_completion_version: 1,
+        pending_definition_req: None,
+        pending_lsp_change: None,
     };
 
     assert_eq!(editor.current_buffer, 0);
@@ -311,6 +315,10 @@ fn test_config_commands_open_and_reload() {
         active_completion_req: 0,
         pending_c: false,
         pending_r: false,
+        diagnostics: std::collections::HashMap::new(),
+        active_completion_version: 1,
+        pending_definition_req: None,
+        pending_lsp_change: None,
     };
 
     // Execute :config-open (replaces empty unnamed buffer)
@@ -373,6 +381,10 @@ fn test_visual_mode_and_vgl_motion() {
         active_completion_req: 0,
         pending_c: false,
         pending_r: false,
+        diagnostics: std::collections::HashMap::new(),
+        active_completion_version: 1,
+        pending_definition_req: None,
+        pending_lsp_change: None,
     };
 
     // 1. Press 'v' to enter visual mode
@@ -534,6 +546,10 @@ fn test_lsp_and_tree_sitter_commands() {
         active_completion_req: 0,
         pending_c: false,
         pending_r: false,
+        diagnostics: std::collections::HashMap::new(),
+        active_completion_version: 1,
+        pending_definition_req: None,
+        pending_lsp_change: None,
     };
 
     // Execute :lsp-restart
@@ -619,29 +635,56 @@ fn test_rust_analyzer_and_tree_sitter_diagnostics() {
         "Must not produce any syntax errors on valid multiline struct/closure declarations"
     );
 
-    // 3. Diagnostics from Language Server are accurately returned
-    if let Some(lsp) = havax::lsp::LspClient::new(std::env::current_dir().unwrap_or_default()) {
-        if let Ok(mut guard) = lsp.diagnostics.lock() {
-            guard.insert(
-                path.clone(),
-                vec![havax::lsp::Diagnostic {
-                    line: 1,
-                    col_start: 16,
-                    col_end: 21,
-                    severity: havax::lsp::DiagnosticSeverity::Error,
-                    message: "cannot find value `Strin` in this scope".to_string(),
-                }],
-            );
-        }
-        let lsp_diags =
-            havax::lsp::get_buffer_diagnostics(&path, buf.tree.as_ref(), &lines, Some(&lsp), "rust");
-        assert_eq!(lsp_diags.len(), 1);
-        assert_eq!(lsp_diags[0].line, 1);
-        assert_eq!(
-            lsp_diags[0].message,
-            "cannot find value `Strin` in this scope"
-        );
-    }
+    let mut editor = Editor {
+        buffers: vec![buf],
+        current_buffer: 0,
+        mode: Mode::Normal,
+        goto_return_mode: Mode::Normal,
+        match_return_mode: Mode::Normal,
+        match_state: MatchState::Menu,
+        clipboard: String::new(),
+        command_buffer: String::new(),
+        command_prefix: None,
+        command_completion_idx: 0,
+        status_message: None,
+        file_picker: None,
+        stdout: std::io::stdout(),
+        config: Config {
+            theme: "one-half-dark".to_string(),
+            editor: EditorConfig::default(),
+        },
+        config_path: None,
+        theme: Theme::default(),
+        lsp: None,
+        toml_lsp: None,
+        completion: havax::completion::CompletionMenu::new(),
+        lsp_doc_version: 1,
+        prev_buffer_idx: 0,
+        active_completion_req: 0,
+        pending_c: false,
+        pending_r: false,
+        diagnostics: std::collections::HashMap::new(),
+        active_completion_version: 1,
+        pending_definition_req: None,
+        pending_lsp_change: None,
+    };
+    editor.handle_single_lsp_event(havax::lsp::LspEvent::PublishDiagnostics {
+        path: path.clone(),
+        diagnostics: vec![havax::lsp::Diagnostic {
+            line: 1,
+            col_start: 16,
+            col_end: 21,
+            severity: havax::lsp::DiagnosticSeverity::Error,
+            message: "cannot find value `Strin` in this scope".to_string(),
+        }],
+    });
+    let lsp_diags = editor.get_buffer_diagnostics(&path, None);
+    assert_eq!(lsp_diags.len(), 1);
+    assert_eq!(lsp_diags[0].line, 1);
+    assert_eq!(
+        lsp_diags[0].message,
+        "cannot find value `Strin` in this scope"
+    );
 }
 
 #[test]
@@ -711,6 +754,10 @@ fn test_editor_completion_trigger_and_acceptance() {
         active_completion_req: 0,
         pending_c: false,
         pending_r: false,
+        diagnostics: std::collections::HashMap::new(),
+        active_completion_version: 1,
+        pending_definition_req: None,
+        pending_lsp_change: None,
     };
 
     // Trigger completion for "Strin"
@@ -757,6 +804,10 @@ fn test_editor_insert_mode_completion_keybindings() {
         active_completion_req: 0,
         pending_c: false,
         pending_r: false,
+        diagnostics: std::collections::HashMap::new(),
+        active_completion_version: 1,
+        pending_definition_req: None,
+        pending_lsp_change: None,
     };
 
     editor.trigger_completion();
@@ -844,6 +895,10 @@ fn test_command_pwd() {
         active_completion_req: 0,
         pending_c: false,
         pending_r: false,
+        diagnostics: std::collections::HashMap::new(),
+        active_completion_version: 1,
+        pending_definition_req: None,
+        pending_lsp_change: None,
     };
 
     let res = editor.execute_command();
@@ -896,6 +951,10 @@ fn test_command_cd() {
         active_completion_req: 0,
         pending_c: false,
         pending_r: false,
+        diagnostics: std::collections::HashMap::new(),
+        active_completion_version: 1,
+        pending_definition_req: None,
+        pending_lsp_change: None,
     };
 
     let res = editor.execute_command();
@@ -946,6 +1005,10 @@ fn test_command_set_language() {
         active_completion_req: 0,
         pending_c: false,
         pending_r: false,
+        diagnostics: std::collections::HashMap::new(),
+        active_completion_version: 1,
+        pending_definition_req: None,
+        pending_lsp_change: None,
     };
 
     // 1. Set language to rust
@@ -1035,6 +1098,10 @@ fn test_helix_yank_clipboard_yank_and_paste_newline_and_paste_here() {
         active_completion_req: 0,
         pending_c: false,
         pending_r: false,
+        diagnostics: std::collections::HashMap::new(),
+        active_completion_version: 1,
+        pending_definition_req: None,
+        pending_lsp_change: None,
     };
 
     // 1. Test 'y' in Normal mode (yanks whole line when anchor == cursor)
@@ -1194,6 +1261,10 @@ fn test_match_mode_goto_matching_bracket() {
         active_completion_req: 0,
         pending_c: false,
         pending_r: false,
+        diagnostics: std::collections::HashMap::new(),
+        active_completion_version: 1,
+        pending_definition_req: None,
+        pending_lsp_change: None,
     };
 
     // 1. Press 'm' to enter Match mode
@@ -1257,6 +1328,10 @@ fn test_match_mode_surround_add_delete_replace() {
         active_completion_req: 0,
         pending_c: false,
         pending_r: false,
+        diagnostics: std::collections::HashMap::new(),
+        active_completion_version: 1,
+        pending_definition_req: None,
+        pending_lsp_change: None,
     };
 
     // 1. Surround add quotes: 'm', 's', '"'
@@ -1341,6 +1416,10 @@ fn test_match_mode_select_around_and_inside() {
         active_completion_req: 0,
         pending_c: false,
         pending_r: false,
+        diagnostics: std::collections::HashMap::new(),
+        active_completion_version: 1,
+        pending_definition_req: None,
+        pending_lsp_change: None,
     };
 
     // 1. Select inside bracket: 'm', 'i', '['
@@ -1529,6 +1608,10 @@ fn test_command_mode_interactive_completions_and_tab_cycling() {
         active_completion_req: 0,
         pending_c: false,
         pending_r: false,
+        diagnostics: std::collections::HashMap::new(),
+        active_completion_version: 1,
+        pending_definition_req: None,
+        pending_lsp_change: None,
     };
 
     // 1st Tab -> auto-completes to first match (config-open)
@@ -1588,6 +1671,10 @@ fn test_command_new_buffer_and_write_path() {
         active_completion_req: 0,
         pending_c: false,
         pending_r: false,
+        diagnostics: std::collections::HashMap::new(),
+        active_completion_version: 1,
+        pending_definition_req: None,
+        pending_lsp_change: None,
     };
 
     // Execute :new
@@ -1720,6 +1807,10 @@ fn test_redo_with_shift_u_and_ctrl_arrow_word_navigation() {
         active_completion_req: 0,
         pending_c: false,
         pending_r: false,
+        diagnostics: std::collections::HashMap::new(),
+        active_completion_version: 1,
+        pending_definition_req: None,
+        pending_lsp_change: None,
     };
 
     // 1. Test Ctrl+Right and Ctrl+Left word skipping in Normal Mode
@@ -1859,6 +1950,10 @@ fn test_auto_import_insertion_on_completion_acceptance() {
         match_return_mode: types::Mode::Normal,
         pending_c: false,
         pending_r: false,
+        diagnostics: std::collections::HashMap::new(),
+        active_completion_version: 1,
+        pending_definition_req: None,
+        pending_lsp_change: None,
         file_picker: None,
         lsp: None,
         toml_lsp: None,
@@ -2003,6 +2098,10 @@ fn test_command_write_preserves_editor_running_and_bufferline() {
         active_completion_req: 0,
         pending_c: false,
         pending_r: false,
+        diagnostics: std::collections::HashMap::new(),
+        active_completion_version: 1,
+        pending_definition_req: None,
+        pending_lsp_change: None,
     };
 
     // Mark buffer as modified
@@ -2098,6 +2197,10 @@ auto-format = false
         active_completion_req: 0,
         pending_c: false,
         pending_r: false,
+        diagnostics: std::collections::HashMap::new(),
+        active_completion_version: 1,
+        pending_definition_req: None,
+        pending_lsp_change: None,
     };
 
     editor.buf_mut().modified = true;
@@ -2164,6 +2267,10 @@ fn test_string_scoped_completions_and_method_completions() {
         active_completion_req: 0,
         pending_c: false,
         pending_r: false,
+        diagnostics: std::collections::HashMap::new(),
+        active_completion_version: 1,
+        pending_definition_req: None,
+        pending_lsp_change: None,
     };
 
     // 1. Test `String::` triggers completion with all associated functions
@@ -2336,6 +2443,10 @@ fn test_helix_goto_table_and_buffer_actions() {
         active_completion_req: 0,
         pending_c: false,
         pending_r: false,
+        diagnostics: std::collections::HashMap::new(),
+        active_completion_version: 1,
+        pending_definition_req: None,
+        pending_lsp_change: None,
     };
 
     // 1. Pressing 'g' enters Goto mode
@@ -2549,6 +2660,10 @@ fn test_idle_whitespace_no_inline_keyword_completions() {
         active_completion_req: 0,
         pending_c: false,
         pending_r: false,
+        diagnostics: std::collections::HashMap::new(),
+        active_completion_version: 1,
+        pending_definition_req: None,
+        pending_lsp_change: None,
     };
 
     // When cursor is on whitespace without typing prefix, completion must NOT be shown
@@ -2628,6 +2743,10 @@ fn test_treesitter_custom_struct_enum_and_method_ast_completions() {
         active_completion_req: 0,
         pending_c: false,
         pending_r: false,
+        diagnostics: std::collections::HashMap::new(),
+        active_completion_version: 1,
+        pending_definition_req: None,
+        pending_lsp_change: None,
     };
 
     // 1. Dynamic dot method completion for custom `user.`
@@ -2771,6 +2890,10 @@ fn test_snippet_template_expansion_struct_enum_fn_closure() {
         active_completion_req: 0,
         pending_c: false,
         pending_r: false,
+        diagnostics: std::collections::HashMap::new(),
+        active_completion_version: 1,
+        pending_definition_req: None,
+        pending_lsp_change: None,
     };
 
     // Trigger completion for "stru" -> accepts struct template
@@ -2842,6 +2965,10 @@ fn test_trait_implementation_autocomplete_methods() {
         active_completion_req: 0,
         pending_c: false,
         pending_r: false,
+        diagnostics: std::collections::HashMap::new(),
+        active_completion_version: 1,
+        pending_definition_req: None,
+        pending_lsp_change: None,
     };
 
     editor.trigger_completion();
@@ -2922,6 +3049,10 @@ fn test_clipboard_yank_command_and_aliases() {
         active_completion_req: 0,
         pending_c: false,
         pending_r: false,
+        diagnostics: std::collections::HashMap::new(),
+        active_completion_version: 1,
+        pending_definition_req: None,
+        pending_lsp_change: None,
     };
 
     // 1. Test :clipboard-yank on visual selection
@@ -3061,6 +3192,10 @@ fn test_scoped_double_colon_dynamic_ast_and_lsp_autocompletion() {
         active_completion_req: 0,
         pending_c: false,
         pending_r: false,
+        diagnostics: std::collections::HashMap::new(),
+        active_completion_version: 1,
+        pending_definition_req: None,
+        pending_lsp_change: None,
     };
 
     editor.trigger_completion();
@@ -3116,6 +3251,10 @@ fn test_helix_leader_mode_and_actions() {
         active_completion_req: 0,
         pending_c: false,
         pending_r: false,
+        diagnostics: std::collections::HashMap::new(),
+        active_completion_version: 1,
+        pending_definition_req: None,
+        pending_lsp_change: None,
     };
 
     let _ = editor.handle_key(KeyCode::Char(' '), KeyModifiers::NONE);
@@ -3207,6 +3346,10 @@ fn test_ratatui_render_all_modes_and_popups() {
         active_completion_req: 0,
         pending_c: false,
         pending_r: false,
+        diagnostics: std::collections::HashMap::new(),
+        active_completion_version: 1,
+        pending_definition_req: None,
+        pending_lsp_change: None,
     };
 
     let backend = ratatui::backend::TestBackend::new(100, 30);
@@ -3245,6 +3388,7 @@ fn test_ratatui_render_all_modes_and_popups() {
         detail: Some("fn clone(&self)".to_string()),
         kind_name: "Method".to_string(),
         insert_text: None,
+        additional_text_edits: Vec::new(),
     }];
     assert!(editor.render_to_terminal(&mut terminal).is_ok());
 
@@ -3289,6 +3433,10 @@ fn test_replace_char_normal_and_visual_mode() {
         active_completion_req: 0,
         pending_c: false,
         pending_r: false,
+        diagnostics: std::collections::HashMap::new(),
+        active_completion_version: 1,
+        pending_definition_req: None,
+        pending_lsp_change: None,
     };
 
     let _ = editor.handle_key(KeyCode::Char('r'), KeyModifiers::NONE);
@@ -3345,6 +3493,10 @@ fn test_replace_mode_enter_edit_and_exit() {
         active_completion_req: 0,
         pending_c: false,
         pending_r: false,
+        diagnostics: std::collections::HashMap::new(),
+        active_completion_version: 1,
+        pending_definition_req: None,
+        pending_lsp_change: None,
     };
 
     let _ = editor.handle_key(KeyCode::Char('R'), KeyModifiers::NONE);
@@ -3375,6 +3527,301 @@ fn test_find_std_or_crate_definition() {
     let roots = Editor::get_source_search_roots();
     assert!(!roots.is_empty());
 }
+
+#[test]
+fn test_async_lsp_stale_response_discarded() {
+    let mut buf = Buffer::new(PathBuf::from("main.rs")).unwrap();
+    buf.lines = vec!["fn main() {".to_string(), "    let x = 10;".to_string(), "}".to_string()];
+    buf.version = 5;
+
+    let mut editor = Editor {
+        buffers: vec![buf],
+        current_buffer: 0,
+        mode: Mode::Insert,
+        goto_return_mode: Mode::Normal,
+        match_return_mode: Mode::Normal,
+        match_state: MatchState::Menu,
+        clipboard: String::new(),
+        command_buffer: String::new(),
+        command_prefix: None,
+        command_completion_idx: 0,
+        status_message: None,
+        file_picker: None,
+        stdout: std::io::stdout(),
+        config: Config {
+            theme: "one-half-dark".to_string(),
+            editor: EditorConfig::default(),
+        },
+        config_path: None,
+        theme: Theme::default(),
+        lsp: None,
+        toml_lsp: None,
+        completion: havax::completion::CompletionMenu::new(),
+        lsp_doc_version: 5,
+        prev_buffer_idx: 0,
+        active_completion_req: 42,
+        pending_c: false,
+        pending_r: false,
+        diagnostics: std::collections::HashMap::new(),
+        active_completion_version: 5,
+        pending_definition_req: None,
+        pending_lsp_change: None,
+    };
+
+    editor.buf_mut().version = 6;
+
+    let stale_event = havax::lsp::LspEvent::CompletionResponse {
+        id: 42,
+        doc_version: 5,
+        items: vec![havax::lsp::CompletionItem {
+            label: "stale_item".to_string(),
+            kind_name: "variable".to_string(),
+            detail: None,
+            insert_text: None,
+            additional_text_edits: Vec::new(),
+        }],
+    };
+
+    let handled = editor.handle_single_lsp_event(stale_event);
+    assert!(!handled);
+    assert!(!editor.completion.visible);
+    assert!(editor.completion.items.is_empty());
+}
+
+#[test]
+fn test_async_lsp_matching_response_accepted() {
+    let mut buf = Buffer::new(PathBuf::from("main.rs")).unwrap();
+    buf.lines = vec!["fn main() {".to_string(), "    let f".to_string(), "}".to_string()];
+    buf.version = 5;
+    buf.cursor = Position { row: 1, col: 9 };
+
+    let mut editor = Editor {
+        buffers: vec![buf],
+        current_buffer: 0,
+        mode: Mode::Insert,
+        goto_return_mode: Mode::Normal,
+        match_return_mode: Mode::Normal,
+        match_state: MatchState::Menu,
+        clipboard: String::new(),
+        command_buffer: String::new(),
+        command_prefix: None,
+        command_completion_idx: 0,
+        status_message: None,
+        file_picker: None,
+        stdout: std::io::stdout(),
+        config: Config {
+            theme: "one-half-dark".to_string(),
+            editor: EditorConfig::default(),
+        },
+        config_path: None,
+        theme: Theme::default(),
+        lsp: None,
+        toml_lsp: None,
+        completion: havax::completion::CompletionMenu::new(),
+        lsp_doc_version: 5,
+        prev_buffer_idx: 0,
+        active_completion_req: 42,
+        pending_c: false,
+        pending_r: false,
+        diagnostics: std::collections::HashMap::new(),
+        active_completion_version: 5,
+        pending_definition_req: None,
+        pending_lsp_change: None,
+    };
+    editor.completion.trigger_col = 8;
+
+    let valid_event = havax::lsp::LspEvent::CompletionResponse {
+        id: 42,
+        doc_version: 5,
+        items: vec![havax::lsp::CompletionItem {
+            label: "fresh_var".to_string(),
+            kind_name: "variable".to_string(),
+            detail: Some("i32".to_string()),
+            insert_text: None,
+            additional_text_edits: Vec::new(),
+        }],
+    };
+
+    let handled = editor.handle_single_lsp_event(valid_event);
+    assert!(handled);
+    assert!(editor.completion.visible);
+    assert_eq!(editor.completion.items.len(), 1);
+    assert_eq!(editor.completion.items[0].label, "fresh_var");
+}
+
+#[test]
+fn test_additional_text_edits_auto_import_application() {
+    let mut buf = Buffer::new(PathBuf::from("main.rs")).unwrap();
+    buf.lines = vec![
+        "fn main() {".to_string(),
+        "    let _w = BufWr".to_string(),
+        "}".to_string(),
+    ];
+    buf.cursor = Position { row: 1, col: 18 };
+
+    let edits = vec![havax::lsp::TextEdit {
+        start_line: 0,
+        start_col: 0,
+        end_line: 0,
+        end_col: 0,
+        new_text: "use std::io::BufWriter;\n".to_string(),
+    }];
+
+    Editor::apply_additional_text_edits(&mut buf, &edits);
+
+    assert_eq!(buf.lines.len(), 4);
+    assert_eq!(buf.lines[0], "use std::io::BufWriter;");
+    assert_eq!(buf.lines[1], "fn main() {");
+    assert_eq!(buf.lines[2], "    let _w = BufWr");
+    assert_eq!(buf.cursor, Position { row: 2, col: 18 });
+}
+
+#[test]
+fn test_treesitter_incremental_parsing() {
+    let mut buf = Buffer::new(PathBuf::from("main.rs")).unwrap();
+    buf.lines = vec!["fn main() {}".to_string()];
+    buf.language = Some("rust".to_string());
+    buf.reparse();
+    assert!(buf.tree.is_some());
+
+    let edit = tree_sitter::InputEdit {
+        start_byte: 11,
+        old_end_byte: 11,
+        new_end_byte: 12,
+        start_position: tree_sitter::Point { row: 0, column: 11 },
+        old_end_position: tree_sitter::Point { row: 0, column: 11 },
+        new_end_position: tree_sitter::Point { row: 0, column: 12 },
+    };
+    buf.lines[0] = "fn main() { }".to_string();
+    buf.apply_tree_edit(&edit);
+    buf.reparse_incremental();
+    assert!(buf.tree.is_some());
+    assert!(!buf.tree.as_ref().unwrap().root_node().has_error());
+}
+
+#[test]
+fn test_goto_definition_async_handling() {
+    let mut buf = Buffer::new(PathBuf::from("main.rs")).unwrap();
+    buf.lines = vec!["fn main() {".to_string(), "    foo();".to_string(), "}".to_string()];
+    buf.version = 3;
+
+    let mut editor = Editor {
+        buffers: vec![buf],
+        current_buffer: 0,
+        mode: Mode::Normal,
+        goto_return_mode: Mode::Normal,
+        match_return_mode: Mode::Normal,
+        match_state: MatchState::Menu,
+        clipboard: String::new(),
+        command_buffer: String::new(),
+        command_prefix: None,
+        command_completion_idx: 0,
+        status_message: None,
+        file_picker: None,
+        stdout: std::io::stdout(),
+        config: Config {
+            theme: "one-half-dark".to_string(),
+            editor: EditorConfig::default(),
+        },
+        config_path: None,
+        theme: Theme::default(),
+        lsp: None,
+        toml_lsp: None,
+        completion: havax::completion::CompletionMenu::new(),
+        lsp_doc_version: 3,
+        prev_buffer_idx: 0,
+        active_completion_req: 0,
+        pending_c: false,
+        pending_r: false,
+        diagnostics: std::collections::HashMap::new(),
+        active_completion_version: 3,
+        pending_definition_req: Some((10, PathBuf::from("main.rs"), 3, "foo".to_string())),
+        pending_lsp_change: None,
+    };
+
+    let ev = havax::lsp::LspEvent::DefinitionResponse {
+        id: 10,
+        doc_version: 3,
+        location: Some(havax::lsp::Location {
+            path: PathBuf::from("main.rs"),
+            line: 0,
+            col: 3,
+        }),
+    };
+
+    let handled = editor.handle_single_lsp_event(ev);
+    assert!(handled);
+    assert_eq!(editor.buf().cursor, Position { row: 0, col: 3 });
+}
+
+#[test]
+fn test_fallback_definition_response_id_zero() {
+    let mut buf = Buffer::new(PathBuf::from("main.rs")).unwrap();
+    buf.lines = vec!["use std::io;".to_string()];
+    buf.version = 2;
+
+    let mut editor = Editor {
+        buffers: vec![buf],
+        current_buffer: 0,
+        mode: Mode::Normal,
+        goto_return_mode: Mode::Normal,
+        match_return_mode: Mode::Normal,
+        match_state: MatchState::Menu,
+        clipboard: String::new(),
+        command_buffer: String::new(),
+        command_prefix: None,
+        command_completion_idx: 0,
+        status_message: None,
+        file_picker: None,
+        stdout: std::io::stdout(),
+        config: Config {
+            theme: "one-half-dark".to_string(),
+            editor: EditorConfig::default(),
+        },
+        config_path: None,
+        theme: Theme::default(),
+        lsp: None,
+        toml_lsp: None,
+        completion: havax::completion::CompletionMenu::new(),
+        lsp_doc_version: 2,
+        prev_buffer_idx: 0,
+        active_completion_req: 0,
+        pending_c: false,
+        pending_r: false,
+        diagnostics: std::collections::HashMap::new(),
+        active_completion_version: 2,
+        pending_definition_req: None,
+        pending_lsp_change: None,
+    };
+
+    let ev = havax::lsp::LspEvent::DefinitionResponse {
+        id: 0,
+        doc_version: 2,
+        location: Some(havax::lsp::Location {
+            path: PathBuf::from("main.rs"),
+            line: 0,
+            col: 4,
+        }),
+    };
+
+    let handled = editor.handle_single_lsp_event(ev);
+    assert!(handled);
+    assert_eq!(editor.buf().cursor, Position { row: 0, col: 4 });
+}
+
+#[test]
+fn test_buffer_reparse_cached_text_optimization() {
+    let mut buf = Buffer::new(PathBuf::from("test.rs")).unwrap();
+    buf.lines = vec!["fn a() {}".to_string()];
+    buf.reparse();
+    assert!(buf.cached_text.is_some());
+    let initial_hash = buf.last_parsed_hash;
+    assert!(initial_hash.is_some());
+
+    buf.reparse();
+    assert_eq!(buf.last_parsed_hash, initial_hash);
+}
+
 
 
 

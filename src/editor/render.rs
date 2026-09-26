@@ -65,29 +65,26 @@ impl Editor {
 
         let term_size = terminal.size()?;
         let (cols, rows) = (term_size.width, term_size.height);
-        let current_buf = &mut self.buffers[self.current_buffer];
-        let max_digits = current_buf.lines.len().max(1).to_string().len().max(2);
-        let gutter_width = 2 + max_digits + 2;
-        let content_rows = (rows.saturating_sub(if show_tab_bar { 2 } else { 1 }) as usize).max(1);
-        let content_cols = (cols as usize).saturating_sub(gutter_width);
-        current_buf.adjust_scroll(content_rows, content_cols);
+        let (buf_path, buf_lang) = {
+            let current_buf = &mut self.buffers[self.current_buffer];
+            let max_digits = current_buf.lines.len().max(1).to_string().len().max(2);
+            let gutter_width = 2 + max_digits + 2;
+            let content_rows = (rows.saturating_sub(if show_tab_bar { 2 } else { 1 }) as usize).max(1);
+            let content_cols = (cols as usize).saturating_sub(gutter_width);
+            current_buf.adjust_scroll(content_rows, content_cols);
 
-        if current_buf.needs_reparse || current_buf.tree.is_none() {
-            current_buf.reparse();
-        }
+            if current_buf.needs_reparse || current_buf.tree.is_none() {
+                current_buf.reparse();
+            }
+            (current_buf.path.clone(), current_buf.language().to_string())
+        };
 
-        let lsp_client = match current_buf.language() {
+        let lsp_client = match buf_lang.as_str() {
             "rust" => self.lsp.as_ref(),
             "toml" => self.toml_lsp.as_ref(),
             _ => None,
         };
-        let diagnostics = crate::lsp::get_buffer_diagnostics(
-            &current_buf.path,
-            current_buf.tree.as_ref(),
-            &current_buf.lines,
-            lsp_client,
-            current_buf.language(),
-        );
+        let diagnostics = self.get_buffer_diagnostics(&buf_path, lsp_client);
 
         let diag_map: std::collections::HashMap<usize, &crate::lsp::Diagnostic> =
             diagnostics.iter().map(|d| (d.line, d)).collect();

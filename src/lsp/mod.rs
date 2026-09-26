@@ -4,7 +4,7 @@ use std::{
     collections::HashMap,
     io::{BufRead, BufReader, Read, Write},
     path::{Path, PathBuf},
-    process::{Child, ChildStdin, Command, Stdio},
+    process::{Child, Command, Stdio},
     sync::{
         Arc, Mutex,
         atomic::{AtomicBool, AtomicU64, Ordering},
@@ -12,6 +12,7 @@ use std::{
     thread,
 };
 
+use crossbeam_channel::{Receiver, Sender};
 use serde_json::{Value, json};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -24,11 +25,20 @@ pub enum DiagnosticSeverity {
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Diagnostic {
-    pub line: usize, // 0-indexed row
+    pub line: usize,
     pub col_start: usize,
     pub col_end: usize,
     pub severity: DiagnosticSeverity,
     pub message: String,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct TextEdit {
+    pub start_line: usize,
+    pub start_col: usize,
+    pub end_line: usize,
+    pub end_col: usize,
+    pub new_text: String,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -37,6 +47,7 @@ pub struct CompletionItem {
     pub detail: Option<String>,
     pub kind_name: String,
     pub insert_text: Option<String>,
+    pub additional_text_edits: Vec<TextEdit>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -46,17 +57,61 @@ pub struct Location {
     pub col: usize,
 }
 
-#[allow(clippy::type_complexity)]
+pub enum LspCommand {
+    Payload(Value),
+    Request {
+        id: u64,
+        kind: RequestKind,
+        payload: Value,
+    },
+    Stop,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum RequestKind {
+    Completion {
+        doc_version: i32,
+    },
+    Definition {
+        doc_version: i32,
+    },
+    TypeDefinition {
+        doc_version: i32,
+    },
+    Implementation {
+        doc_version: i32,
+    },
+    References {
+        doc_version: i32,
+    },
+    Other,
+}
+
+#[derive(Clone, Debug)]
+pub enum LspEvent {
+    PublishDiagnostics {
+        path: PathBuf,
+        diagnostics: Vec<Diagnostic>,
+    },
+    CompletionResponse {
+        id: u64,
+        doc_version: i32,
+        items: Vec<CompletionItem>,
+    },
+    DefinitionResponse {
+        id: u64,
+        doc_version: i32,
+        location: Option<Location>,
+    },
+    ServerExited,
+}
+
 pub struct LspClient {
     pub process: Option<Child>,
-    pub stdin: Arc<Mutex<Option<ChildStdin>>>,
-    pub diagnostics: Arc<Mutex<HashMap<PathBuf, Vec<Diagnostic>>>>,
-    pub latest_completions: Arc<Mutex<Option<(u64, Vec<CompletionItem>)>>>,
-    pub latest_definition: Arc<Mutex<Option<(u64, Option<Location>)>>>,
-    pub request_counter: Arc<AtomicU64>,
-    pub diag_version: Arc<AtomicU64>,
-    pub completion_version: Arc<AtomicU64>,
-    pub definition_version: Arc<AtomicU64>,
+    pub cmd_tx: Sender<LspCommand>,
+    pub event_rx: Receiver<LspEvent>,
+    pub event_tx: Sender<LspEvent>,
+    pub request_counter: AtomicU64,
     pub is_running: Arc<AtomicBool>,
     pub root_dir: PathBuf,
 }
@@ -85,37 +140,66 @@ impl LspClient {
             .spawn()
             .ok()?;
 
-        let stdin = child.stdin.take()?;
+        let mut stdin = child.stdin.take()?;
         let stdout = child.stdout.take()?;
 
-        let stdin_mutex = Arc::new(Mutex::new(Some(stdin)));
-        let diagnostics = Arc::new(Mutex::new(HashMap::new()));
-        let latest_completions = Arc::new(Mutex::new(None));
-        let latest_definition = Arc::new(Mutex::new(None));
-        let request_counter = Arc::new(AtomicU64::new(1));
-        let diag_version = Arc::new(AtomicU64::new(0));
-        let completion_version = Arc::new(AtomicU64::new(0));
-        let definition_version = Arc::new(AtomicU64::new(0));
+        let (cmd_tx, cmd_rx) = crossbeam_channel::unbounded::<LspCommand>();
+        let (event_tx, event_rx) = crossbeam_channel::unbounded::<LspEvent>();
+
+        let pending_requests: Arc<Mutex<HashMap<u64, RequestKind>>> =
+            Arc::new(Mutex::new(HashMap::new()));
         let is_running = Arc::new(AtomicBool::new(true));
 
-        // Background reader thread
-        let diag_clone = Arc::clone(&diagnostics);
-        let comp_clone = Arc::clone(&latest_completions);
-        let def_clone = Arc::clone(&latest_definition);
-        let diag_ver_clone = Arc::clone(&diag_version);
-        let comp_ver_clone = Arc::clone(&completion_version);
-        let def_ver_clone = Arc::clone(&definition_version);
-        let running_clone = Arc::clone(&is_running);
+        let is_running_writer = Arc::clone(&is_running);
+        let pending_reqs_writer = Arc::clone(&pending_requests);
+        let event_tx_writer = event_tx.clone();
+
+        thread::spawn(move || {
+            while is_running_writer.load(Ordering::Relaxed) {
+                let cmd = match cmd_rx.recv() {
+                    Ok(c) => c,
+                    Err(_) => break,
+                };
+
+                let val = match cmd {
+                    LspCommand::Payload(v) => v,
+                    LspCommand::Request { id, kind, payload } => {
+                        if let Ok(mut pending) = pending_reqs_writer.lock() {
+                            pending.insert(id, kind);
+                        }
+                        payload
+                    }
+                    LspCommand::Stop => break,
+                };
+
+                if let Ok(body) = serde_json::to_string(&val) {
+                    let msg = format!("Content-Length: {}\r\n\r\n{}", body.len(), body);
+                    if stdin.write_all(msg.as_bytes()).is_err() || stdin.flush().is_err() {
+                        is_running_writer.store(false, Ordering::Relaxed);
+                        let _ = event_tx_writer.send(LspEvent::ServerExited);
+                        break;
+                    }
+                }
+            }
+        });
+
+        let is_running_reader = Arc::clone(&is_running);
+        let pending_reqs_reader = Arc::clone(&pending_requests);
+        let event_tx_reader = event_tx.clone();
 
         thread::spawn(move || {
             let mut reader = BufReader::new(stdout);
-            while running_clone.load(Ordering::Relaxed) {
+            while is_running_reader.load(Ordering::Relaxed) {
                 let mut content_length = None;
                 loop {
                     let mut line = String::new();
-                    if reader.read_line(&mut line).unwrap_or(0) == 0 {
-                        running_clone.store(false, Ordering::Relaxed);
-                        return;
+                    match reader.read_line(&mut line) {
+                        Ok(0) | Err(_) => {
+                            is_running_reader.store(false, Ordering::Relaxed);
+                            let _ = event_tx_reader.send(LspEvent::ServerExited);
+                            return;
+                        }
+                        Ok(_) => {}
                     }
                     let trimmed = line.trim();
                     if trimmed.is_empty() {
@@ -130,17 +214,16 @@ impl LspClient {
 
                 if let Some(len) = content_length {
                     let mut body = vec![0u8; len];
-                    if reader.read_exact(&mut body).is_ok()
-                        && let Ok(json_val) = serde_json::from_slice::<Value>(&body)
-                    {
+                    if reader.read_exact(&mut body).is_err() {
+                        is_running_reader.store(false, Ordering::Relaxed);
+                        let _ = event_tx_reader.send(LspEvent::ServerExited);
+                        return;
+                    }
+                    if let Ok(json_val) = serde_json::from_slice::<Value>(&body) {
                         handle_lsp_message(
                             &json_val,
-                            &diag_clone,
-                            &comp_clone,
-                            &def_clone,
-                            &diag_ver_clone,
-                            &comp_ver_clone,
-                            &def_ver_clone,
+                            &pending_reqs_reader,
+                            &event_tx_reader,
                         );
                     }
                 }
@@ -149,19 +232,14 @@ impl LspClient {
 
         let client = Self {
             process: Some(child),
-            stdin: stdin_mutex,
-            diagnostics,
-            latest_completions,
-            latest_definition,
-            request_counter,
-            diag_version,
-            completion_version,
-            definition_version,
+            cmd_tx,
+            event_rx,
+            event_tx,
+            request_counter: AtomicU64::new(1),
             is_running,
             root_dir: root_dir.clone(),
         };
 
-        // Send initialize request (Helix-compatible LSP handshake)
         let root_uri = path_to_uri(&root_dir);
         let init_req = json!({
             "jsonrpc": "2.0",
@@ -260,7 +338,6 @@ impl LspClient {
         });
         client.send_payload(&init_req);
 
-        // Send initialized notification
         let initialized_notif = json!({
             "jsonrpc": "2.0",
             "method": "initialized",
@@ -272,15 +349,11 @@ impl LspClient {
     }
 
     pub fn send_payload(&self, val: &Value) {
-        if let Ok(body) = serde_json::to_string(val) {
-            let msg = format!("Content-Length: {}\r\n\r\n{}", body.len(), body);
-            if let Ok(mut guard) = self.stdin.lock()
-                && let Some(stdin) = guard.as_mut()
-            {
-                let _ = stdin.write_all(msg.as_bytes());
-                let _ = stdin.flush();
-            }
-        }
+        let _ = self.cmd_tx.send(LspCommand::Payload(val.clone()));
+    }
+
+    pub fn send_request(&self, id: u64, kind: RequestKind, payload: Value) {
+        let _ = self.cmd_tx.send(LspCommand::Request { id, kind, payload });
     }
 
     pub fn notify_open(&self, path: &Path, language_id: &str, content: &str) {
@@ -337,6 +410,7 @@ impl LspClient {
     pub fn request_completion(
         &self,
         path: &Path,
+        doc_version: i32,
         line: usize,
         col: usize,
         trigger_char: Option<char>,
@@ -369,11 +443,17 @@ impl LspClient {
                 "context": context
             }
         });
-        self.send_payload(&msg);
+        self.send_request(id, RequestKind::Completion { doc_version }, msg);
         id
     }
 
-    pub fn request_definition(&self, path: &Path, line: usize, col: usize) -> u64 {
+    pub fn request_definition(
+        &self,
+        path: &Path,
+        doc_version: i32,
+        line: usize,
+        col: usize,
+    ) -> u64 {
         let id = self.request_counter.fetch_add(1, Ordering::SeqCst);
         let uri = path_to_uri(path);
         let msg = json!({
@@ -390,11 +470,17 @@ impl LspClient {
                 }
             }
         });
-        self.send_payload(&msg);
+        self.send_request(id, RequestKind::Definition { doc_version }, msg);
         id
     }
 
-    pub fn request_type_definition(&self, path: &Path, line: usize, col: usize) -> u64 {
+    pub fn request_type_definition(
+        &self,
+        path: &Path,
+        doc_version: i32,
+        line: usize,
+        col: usize,
+    ) -> u64 {
         let id = self.request_counter.fetch_add(1, Ordering::SeqCst);
         let uri = path_to_uri(path);
         let msg = json!({
@@ -411,11 +497,17 @@ impl LspClient {
                 }
             }
         });
-        self.send_payload(&msg);
+        self.send_request(id, RequestKind::TypeDefinition { doc_version }, msg);
         id
     }
 
-    pub fn request_implementation(&self, path: &Path, line: usize, col: usize) -> u64 {
+    pub fn request_implementation(
+        &self,
+        path: &Path,
+        doc_version: i32,
+        line: usize,
+        col: usize,
+    ) -> u64 {
         let id = self.request_counter.fetch_add(1, Ordering::SeqCst);
         let uri = path_to_uri(path);
         let msg = json!({
@@ -432,11 +524,17 @@ impl LspClient {
                 }
             }
         });
-        self.send_payload(&msg);
+        self.send_request(id, RequestKind::Implementation { doc_version }, msg);
         id
     }
 
-    pub fn request_references(&self, path: &Path, line: usize, col: usize) -> u64 {
+    pub fn request_references(
+        &self,
+        path: &Path,
+        doc_version: i32,
+        line: usize,
+        col: usize,
+    ) -> u64 {
         let id = self.request_counter.fetch_add(1, Ordering::SeqCst);
         let uri = path_to_uri(path);
         let msg = json!({
@@ -456,87 +554,13 @@ impl LspClient {
                 }
             }
         });
-        self.send_payload(&msg);
+        self.send_request(id, RequestKind::References { doc_version }, msg);
         id
-    }
-
-    pub fn get_diagnostics(&self, path: &Path) -> Vec<Diagnostic> {
-        if let Ok(guard) = self.diagnostics.lock() {
-            if let Some(diags) = guard.get(path) {
-                return diags.clone();
-            }
-            if let Ok(abs) = std::fs::canonicalize(path)
-                && let Some(diags) = guard.get(&abs)
-            {
-                return diags.clone();
-            }
-            if let Ok(cur) = std::env::current_dir()
-                && let Some(diags) = guard.get(&cur.join(path))
-            {
-                return diags.clone();
-            }
-            let root_joined = self.root_dir.join(path);
-            if let Some(diags) = guard.get(&root_joined) {
-                return diags.clone();
-            }
-            for (p, diags) in guard.iter() {
-                if p == path || p.ends_with(path) || path.ends_with(p) {
-                    return diags.clone();
-                }
-                if let (Some(f1), Some(f2)) = (p.file_name(), path.file_name())
-                    && f1 == f2
-                {
-                    return diags.clone();
-                }
-            }
-        }
-        Vec::new()
-    }
-
-    pub fn get_completions(&self) -> Option<(u64, Vec<CompletionItem>)> {
-        if let Ok(guard) = self.latest_completions.lock() {
-            guard.clone()
-        } else {
-            None
-        }
-    }
-
-    pub fn get_completions_for(&self, req_id: u64) -> Option<Vec<CompletionItem>> {
-        if let Ok(guard) = self.latest_completions.lock()
-            && let Some((id, items)) = guard.as_ref()
-            && *id == req_id
-        {
-            Some(items.clone())
-        } else {
-            None
-        }
-    }
-
-    pub fn get_definition_for(&self, req_id: u64) -> Option<Location> {
-        if let Ok(guard) = self.latest_definition.lock()
-            && let Some((id, loc_opt)) = guard.as_ref()
-            && *id == req_id
-        {
-            loc_opt.clone()
-        } else {
-            None
-        }
-    }
-
-    pub fn diag_version(&self) -> u64 {
-        self.diag_version.load(Ordering::Relaxed)
-    }
-
-    pub fn completion_version(&self) -> u64 {
-        self.completion_version.load(Ordering::Relaxed)
-    }
-
-    pub fn definition_version(&self) -> u64 {
-        self.definition_version.load(Ordering::Relaxed)
     }
 
     pub fn stop(&mut self) {
         self.is_running.store(false, Ordering::Relaxed);
+        let _ = self.cmd_tx.send(LspCommand::Stop);
         if let Some(mut child) = self.process.take() {
             let _ = child.kill();
         }
@@ -724,17 +748,37 @@ pub fn parse_location(val: &Value) -> Option<Location> {
     None
 }
 
-#[allow(clippy::type_complexity)]
+pub fn parse_text_edits(val: &Value) -> Vec<TextEdit> {
+    let mut edits = Vec::new();
+    if let Some(arr) = val.as_array() {
+        for item in arr {
+            if let Some(range) = item.get("range")
+                && let Some(start) = range.get("start")
+                && let Some(end) = range.get("end")
+                && let Some(new_text) = item.get("newText").and_then(|t| t.as_str())
+            {
+                let start_line = start.get("line").and_then(|l| l.as_u64()).unwrap_or(0) as usize;
+                let start_col = start.get("character").and_then(|c| c.as_u64()).unwrap_or(0) as usize;
+                let end_line = end.get("line").and_then(|l| l.as_u64()).unwrap_or(0) as usize;
+                let end_col = end.get("character").and_then(|c| c.as_u64()).unwrap_or(0) as usize;
+                edits.push(TextEdit {
+                    start_line,
+                    start_col,
+                    end_line,
+                    end_col,
+                    new_text: new_text.to_string(),
+                });
+            }
+        }
+    }
+    edits
+}
+
 fn handle_lsp_message(
     val: &Value,
-    diagnostics: &Arc<Mutex<HashMap<PathBuf, Vec<Diagnostic>>>>,
-    latest_completions: &Arc<Mutex<Option<(u64, Vec<CompletionItem>)>>>,
-    latest_definition: &Arc<Mutex<Option<(u64, Option<Location>)>>>,
-    diag_version: &Arc<AtomicU64>,
-    completion_version: &Arc<AtomicU64>,
-    definition_version: &Arc<AtomicU64>,
+    pending_requests: &Arc<Mutex<HashMap<u64, RequestKind>>>,
+    event_tx: &Sender<LspEvent>,
 ) {
-    // 1. Check for publishDiagnostics notification
     if val.get("method").and_then(|m| m.as_str()) == Some("textDocument/publishDiagnostics") {
         if let Some(params) = val.get("params")
             && let Some(uri_str) = params.get("uri").and_then(|u| u.as_str())
@@ -784,68 +828,106 @@ fn handle_lsp_message(
                     });
                 }
             }
-            if let Ok(mut guard) = diagnostics.lock() {
-                guard.insert(path, diags);
-                diag_version.fetch_add(1, Ordering::SeqCst);
-            }
+            let _ = event_tx.send(LspEvent::PublishDiagnostics {
+                path,
+                diagnostics: diags,
+            });
         }
         return;
     }
 
-    // 2. Check for response by ID
     if let Some(id) = val.get("id").and_then(|id| id.as_u64()) {
+        let req_kind = pending_requests
+            .lock()
+            .ok()
+            .and_then(|mut m| m.remove(&id));
+
         if let Some(result) = val.get("result") {
-            // Check if result is completion
-            let items_val = if let Some(items) = result.get("items").and_then(|i| i.as_array()) {
-                Some(items)
-            } else if result.is_array() {
-                result.as_array()
-            } else {
-                None
-            };
+            let is_completion = matches!(req_kind, Some(RequestKind::Completion { .. }))
+                || result.get("items").is_some()
+                || (result.is_array() && req_kind.is_none());
 
-            if let Some(items_list) = items_val {
+            if is_completion && !result.is_null() {
+                let doc_version = match req_kind {
+                    Some(RequestKind::Completion { doc_version }) => doc_version,
+                    _ => 0,
+                };
+                let items_val = if let Some(items) = result.get("items").and_then(|i| i.as_array()) {
+                    Some(items)
+                } else if result.is_array() {
+                    result.as_array()
+                } else {
+                    None
+                };
+
                 let mut completions = Vec::new();
-                for it in items_list {
-                    if let Some(label) = it.get("label").and_then(|l| l.as_str()) {
-                        let detail = it.get("detail").and_then(|d| d.as_str()).map(String::from);
-                        let kind_num = it.get("kind").and_then(|k| k.as_u64()).unwrap_or(0);
-                        let kind_name = completion_kind_to_str(kind_num).to_string();
-                        let insert_text = it
-                            .get("insertText")
-                            .and_then(|i| i.as_str())
-                            .or_else(|| {
-                                it.get("textEdit")
-                                    .and_then(|te| te.get("newText"))
-                                    .and_then(|nt| nt.as_str())
-                            })
-                            .map(String::from);
+                if let Some(items_list) = items_val {
+                    for it in items_list {
+                        if let Some(label) = it.get("label").and_then(|l| l.as_str()) {
+                            let detail = it.get("detail").and_then(|d| d.as_str()).map(String::from);
+                            let kind_num = it.get("kind").and_then(|k| k.as_u64()).unwrap_or(0);
+                            let kind_name = completion_kind_to_str(kind_num).to_string();
+                            let insert_text = it
+                                .get("insertText")
+                                .and_then(|i| i.as_str())
+                                .or_else(|| {
+                                    it.get("textEdit")
+                                        .and_then(|te| te.get("newText"))
+                                        .and_then(|nt| nt.as_str())
+                                })
+                                .map(String::from);
+                            let additional_text_edits = it
+                                .get("additionalTextEdits")
+                                .map(parse_text_edits)
+                                .unwrap_or_default();
 
-                        completions.push(CompletionItem {
-                            label: label.to_string(),
-                            detail,
-                            kind_name,
-                            insert_text,
-                        });
+                            completions.push(CompletionItem {
+                                label: label.to_string(),
+                                detail,
+                                kind_name,
+                                insert_text,
+                                additional_text_edits,
+                            });
+                        }
                     }
                 }
-                if let Ok(mut guard) = latest_completions.lock() {
-                    *guard = Some((id, completions));
-                    completion_version.fetch_add(1, Ordering::SeqCst);
-                }
+                let _ = event_tx.send(LspEvent::CompletionResponse {
+                    id,
+                    doc_version,
+                    items: completions,
+                });
             } else {
-                // Check if result is definition / location
+                let doc_version = match req_kind {
+                    Some(
+                        RequestKind::Definition { doc_version }
+                        | RequestKind::TypeDefinition { doc_version }
+                        | RequestKind::Implementation { doc_version }
+                        | RequestKind::References { doc_version },
+                    ) => doc_version,
+                    _ => 0,
+                };
                 let loc = parse_location(result);
-                if let Ok(mut guard) = latest_definition.lock() {
-                    *guard = Some((id, loc));
-                    definition_version.fetch_add(1, Ordering::SeqCst);
-                }
+                let _ = event_tx.send(LspEvent::DefinitionResponse {
+                    id,
+                    doc_version,
+                    location: loc,
+                });
             }
-        } else if val.get("error").is_some()
-            && let Ok(mut guard) = latest_definition.lock()
-        {
-            *guard = Some((id, None));
-            definition_version.fetch_add(1, Ordering::SeqCst);
+        } else if val.get("error").is_some() {
+            let doc_version = match req_kind {
+                Some(
+                    RequestKind::Definition { doc_version }
+                    | RequestKind::TypeDefinition { doc_version }
+                    | RequestKind::Implementation { doc_version }
+                    | RequestKind::References { doc_version },
+                ) => doc_version,
+                _ => 0,
+            };
+            let _ = event_tx.send(LspEvent::DefinitionResponse {
+                id,
+                doc_version,
+                location: None,
+            });
         }
     }
 }
@@ -1033,12 +1115,14 @@ pub fn collect_trait_impl_completions(
                     detail: Some(format!("implement trait method {trait_name}::{m_name}")),
                     kind_name: "snippet".to_string(),
                     insert_text: Some(body_snippet),
+                    additional_text_edits: Vec::new(),
                 });
                 items.push(CompletionItem {
                     label: m_name.clone(),
                     detail: Some(sig),
                     kind_name: "snippet".to_string(),
                     insert_text: Some(format!("fn {m_name}{m_params}{m_ret} {{\n    $0\n}}")),
+                    additional_text_edits: Vec::new(),
                 });
             }
         }
@@ -1239,6 +1323,7 @@ fn collect_ast_scoped_symbols(
                                             format!("{name}($0)")
                                         },
                                     ),
+                                    additional_text_edits: Vec::new(),
                                 });
                             }
                         } else if child.kind() == "const_item" {
@@ -1249,6 +1334,7 @@ fn collect_ast_scoped_symbols(
                                     detail: Some(format!("const {name}")),
                                     kind_name: "constant".to_string(),
                                     insert_text: Some(name),
+                                    additional_text_edits: Vec::new(),
                                 });
                             }
                         } else if child.kind() == "type_item"
@@ -1260,6 +1346,7 @@ fn collect_ast_scoped_symbols(
                                 detail: Some(format!("type {name}")),
                                 kind_name: "type".to_string(),
                                 insert_text: Some(name),
+                                additional_text_edits: Vec::new(),
                             });
                         }
                     }
@@ -1288,6 +1375,7 @@ fn collect_ast_scoped_symbols(
                                     detail: Some(format!("enum variant {scope}::{name}")),
                                     kind_name: "enum_member".to_string(),
                                     insert_text: Some(name),
+                                    additional_text_edits: Vec::new(),
                                 });
                             }
                         }
@@ -1333,6 +1421,7 @@ fn collect_ast_scoped_symbols(
                                     format!("{name}($0)")
                                 },
                             ),
+                            additional_text_edits: Vec::new(),
                         });
                     }
                 }
@@ -1360,6 +1449,7 @@ fn collect_ast_scoped_symbols(
                             detail: Some(format!("{name}: {ftype}")),
                             kind_name: "field".to_string(),
                             insert_text: Some(name),
+                            additional_text_edits: Vec::new(),
                         });
                     }
                 }
@@ -1578,6 +1668,7 @@ fn collect_all_impl_methods(
                                 format!("{name}($0)")
                             },
                         ),
+                        additional_text_edits: Vec::new(),
                     });
                 }
             }
@@ -1613,6 +1704,7 @@ fn collect_ast_symbols(
                     detail: Some(format!("fn {name}{params}{ret}")),
                     kind_name: "function".to_string(),
                     insert_text: Some(name),
+                    additional_text_edits: Vec::new(),
                 });
             }
         }
@@ -1624,6 +1716,7 @@ fn collect_ast_symbols(
                     detail: Some(format!("struct {name}")),
                     kind_name: "struct".to_string(),
                     insert_text: Some(name),
+                    additional_text_edits: Vec::new(),
                 });
             }
         }
@@ -1635,6 +1728,7 @@ fn collect_ast_symbols(
                     detail: Some(format!("enum {name}")),
                     kind_name: "enum".to_string(),
                     insert_text: Some(name),
+                    additional_text_edits: Vec::new(),
                 });
             }
         }
@@ -1646,6 +1740,7 @@ fn collect_ast_symbols(
                     detail: Some(format!("variant {name}")),
                     kind_name: "enum_member".to_string(),
                     insert_text: Some(name),
+                    additional_text_edits: Vec::new(),
                 });
             }
         }
@@ -1657,6 +1752,7 @@ fn collect_ast_symbols(
                     detail: Some(format!("trait {name}")),
                     kind_name: "interface".to_string(),
                     insert_text: Some(name),
+                    additional_text_edits: Vec::new(),
                 });
             }
         }
@@ -1668,6 +1764,7 @@ fn collect_ast_symbols(
                     detail: Some(format!("type {name}")),
                     kind_name: "type".to_string(),
                     insert_text: Some(name),
+                    additional_text_edits: Vec::new(),
                 });
             }
         }
@@ -1679,6 +1776,7 @@ fn collect_ast_symbols(
                     detail: Some(format!("const {name}")),
                     kind_name: "constant".to_string(),
                     insert_text: Some(name),
+                    additional_text_edits: Vec::new(),
                 });
             }
         }
@@ -1690,6 +1788,7 @@ fn collect_ast_symbols(
                     detail: Some(format!("mod {name}")),
                     kind_name: "module".to_string(),
                     insert_text: Some(name),
+                    additional_text_edits: Vec::new(),
                 });
             }
         }
@@ -1702,6 +1801,7 @@ fn collect_ast_symbols(
                         detail: Some(format!("let {name}")),
                         kind_name: "variable".to_string(),
                         insert_text: Some(name),
+                        additional_text_edits: Vec::new(),
                     });
                 }
             }
@@ -1720,6 +1820,7 @@ fn collect_ast_symbols(
                                 detail: Some(format!("closure param {clean}")),
                                 kind_name: "variable".to_string(),
                                 insert_text: Some(clean.to_string()),
+                                additional_text_edits: Vec::new(),
                             });
                         }
                     }
@@ -2452,6 +2553,7 @@ pub fn get_standard_rust_completions(prefix: &str) -> Vec<CompletionItem> {
                     detail: detail.map(String::from),
                     kind_name: kind.to_string(),
                     insert_text: Some(insert.to_string()),
+                    additional_text_edits: Vec::new(),
                 },
             ));
         }
@@ -2722,6 +2824,7 @@ pub fn get_standard_toml_completions(prefix: &str) -> Vec<CompletionItem> {
                     detail: detail.map(String::from),
                     kind_name: kind.to_string(),
                     insert_text: Some(insert.to_string()),
+                    additional_text_edits: Vec::new(),
                 },
             ));
         }
@@ -2742,14 +2845,11 @@ pub fn is_subsequence(sub: &str, target: &str) -> bool {
 }
 
 pub fn get_buffer_diagnostics(
-    path: &Path,
+    _path: &Path,
     _tree: Option<&tree_sitter::Tree>,
     _lines: &[String],
-    lsp: Option<&LspClient>,
+    _lsp: Option<&LspClient>,
     _lang: &str,
 ) -> Vec<Diagnostic> {
-    if let Some(lsp) = lsp {
-        return lsp.get_diagnostics(path);
-    }
     Vec::new()
 }
