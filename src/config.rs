@@ -51,6 +51,15 @@ pub struct EditorConfig {
     )]
     pub auto_pairs: bool,
 
+    #[serde(
+        default = "default_insert_final_newline",
+        rename = "insert-final-newline",
+        alias = "insert_final_newline",
+        alias = "insert-newline-in-lastline",
+        alias = "insert_newline_in_lastline"
+    )]
+    pub insert_final_newline: bool,
+
     #[serde(default, rename = "cursor-shape", alias = "cursor_shape")]
     pub cursor_shape: CursorShapeConfig,
 
@@ -60,6 +69,10 @@ pub struct EditorConfig {
 
 fn default_auto_pairs() -> bool {
     true
+}
+
+fn default_insert_final_newline() -> bool {
+    false
 }
 
 fn default_auto_format() -> bool {
@@ -78,6 +91,7 @@ impl Default for EditorConfig {
             auto_format: true,
             mouse: true,
             auto_pairs: true,
+            insert_final_newline: false,
             cursor_shape: CursorShapeConfig::default(),
             file_picker: FilePickerConfig::default(),
         }

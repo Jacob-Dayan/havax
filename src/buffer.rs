@@ -364,6 +364,93 @@ impl Buffer {
         }
     }
 
+    pub fn change_selection(&mut self, clipboard: &mut String) {
+        if self.anchor == self.cursor {
+            let row = self.cursor.row;
+            if row < self.lines.len() {
+                let mut chars: Vec<char> = self.lines[row].chars().collect();
+                if self.cursor.col < chars.len() {
+                    let c = chars.remove(self.cursor.col);
+                    *clipboard = c.to_string();
+                    self.lines[row] = chars.into_iter().collect();
+                    self.modified = true;
+                    self.needs_reparse = true;
+                }
+            }
+            return;
+        }
+
+        let (start, end) = self.selection_bounds();
+        *clipboard = self.yank_range(start, end);
+
+        if start.row == end.row {
+            let mut chars: Vec<char> = self.lines[start.row].chars().collect();
+            if start.col == 0 && end.col >= chars.len() {
+                self.lines[start.row].clear();
+                self.cursor = Position {
+                    row: start.row,
+                    col: 0,
+                };
+                self.anchor = self.cursor;
+                self.modified = true;
+                self.needs_reparse = true;
+            } else {
+                let start_idx = start.col.min(chars.len());
+                let end_idx = end.col.min(chars.len());
+                if start_idx < end_idx {
+                    chars.drain(start_idx..end_idx);
+                    self.lines[start.row] = chars.into_iter().collect();
+                    self.cursor = Position {
+                        row: start.row,
+                        col: start.col,
+                    };
+                    self.anchor = self.cursor;
+                    self.modified = true;
+                    self.needs_reparse = true;
+                }
+            }
+        } else {
+            let start_chars: Vec<char> = self.lines[start.row].chars().collect();
+            let end_chars: Vec<char> = self.lines[end.row].chars().collect();
+
+            if start.col == 0 && end.col >= end_chars.len() {
+                self.lines[start.row].clear();
+                for _ in start.row + 1..=end.row {
+                    if start.row + 1 < self.lines.len() {
+                        self.lines.remove(start.row + 1);
+                    }
+                }
+                self.cursor = Position {
+                    row: start.row,
+                    col: 0,
+                };
+                self.anchor = self.cursor;
+                self.modified = true;
+                self.needs_reparse = true;
+            } else {
+                let prefix: String = start_chars[..start.col.min(start_chars.len())]
+                    .iter()
+                    .collect();
+                let end_idx = end.col.min(end_chars.len());
+                let suffix: String = end_chars[end_idx..].iter().collect();
+
+                self.lines[start.row] = format!("{prefix}{suffix}");
+                for _ in start.row + 1..=end.row {
+                    if start.row + 1 < self.lines.len() {
+                        self.lines.remove(start.row + 1);
+                    }
+                }
+                self.cursor = Position {
+                    row: start.row,
+                    col: start.col,
+                };
+                self.anchor = self.cursor;
+                self.modified = true;
+                self.needs_reparse = true;
+            }
+        }
+    }
+
     pub fn delete_selection(&mut self, clipboard: &mut String) {
         if self.anchor == self.cursor {
             let row = self.cursor.row;

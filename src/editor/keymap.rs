@@ -141,7 +141,7 @@ impl Editor {
                     let mut clip = String::new();
                     let buf = self.buf_mut();
                     buf.push_history();
-                    buf.delete_selection(&mut clip);
+                    buf.change_selection(&mut clip);
                     if !clip.is_empty() {
                         self.clipboard = clip;
                     }
@@ -310,7 +310,19 @@ impl Editor {
                     }
                 }
                 (KeyCode::Char('c'), KeyModifiers::NONE) => {
-                    self.pending_c = true;
+                    let buf = self.buf_mut();
+                    if buf.anchor != buf.cursor {
+                        buf.push_history();
+                        let mut clip = String::new();
+                        buf.change_selection(&mut clip);
+                        if !clip.is_empty() {
+                            self.clipboard = clip;
+                        }
+                        self.mode = Mode::Insert;
+                        self.notify_lsp_change();
+                    } else {
+                        self.pending_c = true;
+                    }
                 }
 
                 // Helix yank & paste
@@ -584,9 +596,16 @@ impl Editor {
                     self.mode = Mode::Normal;
                 }
 
-                // Change selection or clipboard-yank
                 (KeyCode::Char('c'), KeyModifiers::NONE) => {
-                    self.pending_c = true;
+                    let mut clip = String::new();
+                    let buf = self.buf_mut();
+                    buf.push_history();
+                    buf.change_selection(&mut clip);
+                    if !clip.is_empty() {
+                        self.clipboard = clip;
+                    }
+                    self.mode = Mode::Insert;
+                    self.notify_lsp_change();
                 }
 
                 // Yank selection
@@ -977,15 +996,28 @@ impl Editor {
                                 buf.anchor = buf.cursor;
                             }
                             KeyCode::Tab => {
+                                if buf.anchor != buf.cursor {
+                                    let mut clip = String::new();
+                                    buf.delete_selection(&mut clip);
+                                }
                                 buf.insert_tab();
                                 text_changed = true;
                             }
                             KeyCode::Enter => {
+                                if buf.anchor != buf.cursor {
+                                    let mut clip = String::new();
+                                    buf.delete_selection(&mut clip);
+                                }
                                 buf.insert_newline();
                                 text_changed = true;
                             }
                             KeyCode::Backspace => {
-                                buf.delete_char_auto_pair(auto_pairs);
+                                if buf.anchor != buf.cursor {
+                                    let mut clip = String::new();
+                                    buf.delete_selection(&mut clip);
+                                } else {
+                                    buf.delete_char_auto_pair(auto_pairs);
+                                }
                                 text_changed = true;
                             }
                             KeyCode::Delete => {
@@ -1000,7 +1032,10 @@ impl Editor {
                                 buf.move_prev_word_start();
                                 buf.anchor = buf.cursor;
                             }
-                            KeyCode::Left => buf.move_left(),
+                            KeyCode::Left => {
+                                buf.move_left();
+                                buf.anchor = buf.cursor;
+                            },
                             KeyCode::Right
                                 if modifiers.contains(KeyModifiers::CONTROL)
                                     || modifiers.contains(KeyModifiers::ALT) =>
@@ -1008,13 +1043,26 @@ impl Editor {
                                 buf.move_next_word_start();
                                 buf.anchor = buf.cursor;
                             }
-                            KeyCode::Right => buf.move_right(),
-                            KeyCode::Up => buf.move_up(),
-                            KeyCode::Down => buf.move_down(),
+                            KeyCode::Right => {
+                                buf.move_right();
+                                buf.anchor = buf.cursor;
+                            }
+                            KeyCode::Up => {
+                                buf.move_up();
+                                buf.anchor = buf.cursor;
+                            }
+                            KeyCode::Down => {
+                                buf.move_down();
+                                buf.anchor = buf.cursor;
+                            }
                             KeyCode::Char(c)
                                 if !modifiers.contains(KeyModifiers::CONTROL)
                                     && !modifiers.contains(KeyModifiers::ALT) =>
                             {
+                                if buf.anchor != buf.cursor {
+                                    let mut clip = String::new();
+                                    buf.delete_selection(&mut clip);
+                                }
                                 buf.insert_char_auto_pair(c, auto_pairs);
                                 text_changed = true;
                             }

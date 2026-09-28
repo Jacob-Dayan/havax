@@ -1920,8 +1920,39 @@ pub fn fuzzy_match_score(query: &str, candidate: &str) -> Option<u32> {
     None
 }
 
+pub fn is_import_in_buffer(lines: &[String], import_path: &str) -> bool {
+    let short_name = import_path.split("::").last().unwrap_or(import_path);
+    let mod_prefix = import_path.rsplit_once("::").map(|(m, _)| m).unwrap_or("");
+
+    lines.iter().any(|l| {
+        let trimmed = l.trim();
+        if !trimmed.starts_with("use ") && !trimmed.starts_with("pub use ") {
+            return false;
+        }
+        if trimmed.contains(import_path) {
+            return true;
+        }
+        if !mod_prefix.is_empty() && trimmed.contains(&format!("{mod_prefix}::*")) {
+            return true;
+        }
+        if trimmed.contains(&format!("::{short_name}"))
+            || trimmed.contains(&format!(" {short_name};"))
+            || trimmed.contains(&format!(" {short_name},"))
+            || trimmed.contains(&format!(",{short_name}"))
+            || trimmed.contains(&format!("{{{short_name}"))
+            || trimmed.contains(&format!("{short_name}}}"))
+        {
+            if !mod_prefix.is_empty() {
+                let first_seg = mod_prefix.split("::").next().unwrap_or(mod_prefix);
+                return trimmed.contains(first_seg);
+            }
+            return true;
+        }
+        false
+    })
+}
+
 pub fn get_auto_import_for_item(label: &str, detail: Option<&str>) -> Option<String> {
-    // 1. If detail contains "(use <path>)", extract path
     if let Some(d) = detail
         && let Some(start) = d.find("(use ")
     {
@@ -1934,7 +1965,6 @@ pub fn get_auto_import_for_item(label: &str, detail: Option<&str>) -> Option<Str
         }
     }
 
-    // 2. Known standard Rust symbol mapping
     let clean_label = label.trim_end_matches("!(...)").trim_end_matches("![...]");
     match clean_label {
         "BufWriter" => Some("std::io::BufWriter".to_string()),
@@ -1976,6 +2006,7 @@ pub fn get_auto_import_for_item(label: &str, detail: Option<&str>) -> Option<Str
         "ChildStdin" => Some("std::process::ChildStdin".to_string()),
         "ChildStdout" => Some("std::process::ChildStdout".to_string()),
         "ExitStatus" => Some("std::process::ExitStatus".to_string()),
+        "ExitCode" => Some("std::process::ExitCode".to_string()),
         "Stdio" => Some("std::process::Stdio".to_string()),
         "Duration" => Some("std::time::Duration".to_string()),
         "Instant" => Some("std::time::Instant".to_string()),
@@ -2276,6 +2307,12 @@ pub fn get_standard_rust_completions(prefix: &str) -> Vec<CompletionItem> {
             "struct",
             Some("(use std::process::ExitStatus)"),
             "ExitStatus",
+        ),
+        (
+            "ExitCode",
+            "struct",
+            Some("(use std::process::ExitCode)"),
+            "ExitCode",
         ),
         (
             "Stdio",

@@ -234,6 +234,7 @@ impl Editor {
             self.format_buffer_silent(cur);
         }
 
+        let insert_final_newline = self.config.editor.insert_final_newline;
         let buf = self.buf_mut();
         if let Some(parent) = buf.path.parent()
             && !parent.as_os_str().is_empty()
@@ -241,7 +242,13 @@ impl Editor {
         {
             let _ = fs::create_dir_all(parent);
         }
-        let content = buf.lines.join("\n");
+        let mut content = buf.lines.join("\n");
+        if insert_final_newline
+            && !content.is_empty()
+            && !content.ends_with('\n')
+        {
+            content.push('\n');
+        }
         fs::write(&buf.path, content)?;
         buf.modified = false;
         let path_str = buf.path.display().to_string();
@@ -513,7 +520,13 @@ impl Editor {
             }
 
             if is_rust {
-                for item in crate::lsp::get_standard_rust_completions(&filter_prefix) {
+                for mut item in crate::lsp::get_standard_rust_completions(&filter_prefix) {
+                    if let Some(import_path) =
+                        crate::lsp::get_auto_import_for_item(&item.label, item.detail.as_deref())
+                        && crate::lsp::is_import_in_buffer(&lines, &import_path)
+                    {
+                        item.detail = None;
+                    }
                     if !items.iter().any(|it| it.label == item.label) {
                         items.push(item);
                     }
@@ -546,6 +559,17 @@ impl Editor {
                             additional_text_edits: Vec::new(),
                         });
                     }
+                }
+            }
+        }
+
+        if is_rust {
+            for item in &mut items {
+                if let Some(import_path) =
+                    crate::lsp::get_auto_import_for_item(&item.label, item.detail.as_deref())
+                    && crate::lsp::is_import_in_buffer(&lines, &import_path)
+                {
+                    item.detail = None;
                 }
             }
         }
@@ -588,7 +612,7 @@ impl Editor {
                 let indent_len = prefix_before.len() - prefix_before.trim_start().len();
                 let base_indent = " ".repeat(indent_len);
 
-                let (cleaned_lines, (rel_row, target_col)) =
+                let (cleaned_lines, (rel_anchor_row, anchor_col), (rel_cursor_row, target_col)) =
                     expand_snippet(&insert_text, &base_indent, start_col);
 
                 if cleaned_lines.len() <= 1 {
@@ -599,8 +623,14 @@ impl Editor {
                     };
                     let new_line = format!("{prefix_before}{first_line}{suffix_after}");
                     buf.lines[row] = new_line;
-                    buf.cursor.row = row;
-                    buf.cursor.col = target_col;
+                    buf.anchor = Position {
+                        row: row + rel_anchor_row,
+                        col: anchor_col,
+                    };
+                    buf.cursor = Position {
+                        row: row + rel_cursor_row,
+                        col: target_col,
+                    };
                 } else {
                     let first_line = format!("{prefix_before}{}", cleaned_lines[0]);
                     let last_idx = cleaned_lines.len() - 1;
@@ -612,26 +642,24 @@ impl Editor {
                     }
                     buf.lines.insert(row + last_idx, last_line);
 
-                    buf.cursor.row = row + rel_row;
-                    buf.cursor.col = target_col;
+                    buf.anchor = Position {
+                        row: row + rel_anchor_row,
+                        col: anchor_col,
+                    };
+                    buf.cursor = Position {
+                        row: row + rel_cursor_row,
+                        col: target_col,
+                    };
                 }
 
-                buf.anchor = buf.cursor;
                 buf.modified = true;
                 buf.needs_reparse = true;
 
                 if !item.additional_text_edits.is_empty() {
                     Self::apply_additional_text_edits(buf, &item.additional_text_edits);
                 } else if let Some(import_path) = auto_import_opt {
-                    let short_name = import_path.split("::").last().unwrap_or(&import_path);
-                    let use_statement = format!("use {import_path};");
-                    let already_imported = buf.lines.iter().any(|l| {
-                        let trimmed = l.trim();
-                        trimmed.starts_with("use ")
-                            && (trimmed.contains(&import_path)
-                                || trimmed.contains(short_name)
-                                || trimmed.contains("::*"))
-                    });
+                    let already_imported =
+                        crate::lsp::is_import_in_buffer(&buf.lines, &import_path);
 
                     if !already_imported {
                         let mut insert_row = 0;
@@ -651,6 +679,7 @@ impl Editor {
                             insert_row
                         };
 
+                        let use_statement = format!("use {import_path};");
                         buf.lines.insert(target_row, use_statement);
                         if target_row <= buf.cursor.row {
                             buf.cursor.row += 1;
@@ -1483,10 +1512,11 @@ pub fn expand_snippet(
     snippet: &str,
     base_indent: &str,
     start_col: usize,
-) -> (Vec<String>, (usize, usize)) {
+) -> (Vec<String>, (usize, usize), (usize, usize)) {
     let raw_lines: Vec<&str> = snippet.split('\n').collect();
     let mut cleaned_lines = Vec::new();
-    let mut target_cursor = None;
+    let mut placeholder_range: Option<((usize, usize), (usize, usize))> = None;
+    let mut fallback_cursor = None;
 
     for (line_idx, raw_line) in raw_lines.iter().enumerate() {
         let mut line_str = String::new();
@@ -1497,9 +1527,9 @@ pub fn expand_snippet(
             if c == '$' {
                 if chars.peek() == Some(&'1') || chars.peek() == Some(&'0') {
                     chars.next();
-                    if target_cursor.is_none() {
+                    if fallback_cursor.is_none() {
                         let col_offset = if line_idx == 0 { start_col } else { base_indent.len() };
-                        target_cursor = Some((line_idx, col_offset + col_in_line));
+                        fallback_cursor = Some((line_idx, col_offset + col_in_line));
                     }
                 } else if chars.peek() == Some(&'2') || chars.peek() == Some(&'3') {
                     chars.next();
@@ -1513,12 +1543,18 @@ pub fn expand_snippet(
                         placeholder.push(ch);
                     }
                     let def_val = placeholder.split(':').nth(1).unwrap_or("");
-                    if target_cursor.is_none() {
-                        let col_offset = if line_idx == 0 { start_col } else { base_indent.len() };
-                        target_cursor = Some((line_idx, col_offset + col_in_line));
-                    }
+                    let col_offset = if line_idx == 0 { start_col } else { base_indent.len() };
+                    let p_start = (line_idx, col_offset + col_in_line);
                     line_str.push_str(def_val);
-                    col_in_line += def_val.len();
+                    col_in_line += def_val.chars().count();
+                    let p_end = (line_idx, col_offset + col_in_line);
+
+                    if placeholder_range.is_none() && !def_val.is_empty() {
+                        placeholder_range = Some((p_start, p_end));
+                    }
+                    if fallback_cursor.is_none() {
+                        fallback_cursor = Some(p_start);
+                    }
                 } else {
                     line_str.push(c);
                     col_in_line += 1;
@@ -1536,18 +1572,23 @@ pub fn expand_snippet(
         }
     }
 
-    let target = target_cursor.unwrap_or_else(|| {
+    let (anchor, cursor) = if let Some((p_start, p_end)) = placeholder_range {
+        (p_start, p_end)
+    } else if let Some(target) = fallback_cursor {
+        (target, target)
+    } else {
         let last_idx = cleaned_lines.len().saturating_sub(1);
-        let last_len = cleaned_lines[last_idx].len();
+        let last_len = cleaned_lines[last_idx].chars().count();
         let col_offset = if last_idx == 0 {
             start_col
         } else {
             0
         };
-        (last_idx, col_offset + last_len)
-    });
+        let pos = (last_idx, col_offset + last_len);
+        (pos, pos)
+    };
 
-    (cleaned_lines, target)
+    (cleaned_lines, anchor, cursor)
 }
 
 fn get_source_search_roots() -> Vec<PathBuf> {

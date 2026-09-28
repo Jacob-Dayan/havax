@@ -303,6 +303,12 @@ hidden = false
 - **Dynamic Tree-Sitter & rust-analyzer AST Extraction**: Extended Tree-Sitter AST inspection (`extract_tree_sitter_symbols`, `extract_tree_sitter_scoped_symbols`, `extract_tree_sitter_methods`) to dynamically extract methods, functions, fields, enum variants, and trait implementations for all user-defined structs, enums, traits, and modules in addition to standard library types.
 - **Local Variable Type Deductions**: Analyzes local variable declarations (`let`, function parameters, `self`) to resolve receiver types and dynamically suggest matching `impl` methods on dot `.` expressions.
 
+### Phase 20 — Snippet Placeholders, Line Change, Trailing Newlines & Auto-Import Scoping
+- **Snippet Placeholder Visualization & Replacement**: Snippet parameter placeholders (e.g. `${1:s}`) are highlighted as active selections upon acceptance, and typing any character, tab, enter, or backspace immediately replaces the placeholder.
+- **Normal Mode `xc` Line Change**: Pressing `x` selects the line, and `c` immediately clears line contents without removing the newline character, entering Insert mode waiting for inserted text.
+- **Configurable `insert-final-newline`**: Added `insert-final-newline` under `[editor]` configuration to ensure trailing newline on buffer save when enabled.
+- **Auto-Import Scoping & ExitCode**: Added `ExitCode` (`std::process::ExitCode`) to standard Rust completions, and suppressed redundant `+use` detail when items are already imported in the buffer.
+
 ---
 
 ## Testing
@@ -311,30 +317,6 @@ hidden = false
 cargo test
 ```
 
-51 integration tests covering:
-- CLI argument parsing and `-a` directory scanning
-- TOML configuration deserialization & Havax config path resolution
-- All command-mode commands (`:new`, `:w`, `:wa`, `:pwd`, `:cd`, `:set-language`, `:config-open`, `:config-reload`)
-- Configurable auto-format (`auto-format = true/false`) on write
-- Visual mode motions (`vgl`)
-- Word/back-word motions with selection marking
-- Match mode (brackets, surround, select around/inside)
-- Helix Goto table popup overlay and all goto actions (`gs`, `gh`, `gl`, `gg`, `ge`, `ga`, `gm`, `g.`, `gd`, `gf`, `gn`, `gp`)
-- Idle / whitespace completion suppression (no unwanted popups on idle)
-- Dynamic Tree-Sitter custom struct, enum, and method AST completions
-- Tree-sitter syntax highlighting accuracy (Rust and TOML)
-- LSP diagnostics and completion triggering (Rust and TOML)
-- Real-time background LSP diagnostic & completion reactivity
-- Scoped module and type completions (`String::`, `std::fs::`, `std::io::`, `Vec::`, custom structs/enums)
-- Dot-operator method completions (`s.`, `path.`, `vec.`, `user.`)
-- AST-derived `impl` associated functions and `enum` variant completions
-- Command-mode Tab/BackTab cycling and expanded write aliases
-- Theme inheritance and custom overrides
-- Rainbow bracket nesting colors
-- Insert-mode completion keybindings (Tab/BackTab/Enter/Esc)
-- Redo (`<Shift+u>`) and `<Ctrl+Left/Right>` word navigation across modes
-- Keyword completions (`let`, `fn`, `mut`, `match`) and multi-part fuzzy matching (`WriteBu` -> `BufWriter`)
-- Built-in auto-import insertion on completion acceptance
-- Live syntax highlighting reparse and deletion stability
-- Bufferline persistence during and after command execution
+74 integration tests covering all features and regressions.
+
 

@@ -3822,6 +3822,405 @@ fn test_buffer_reparse_cached_text_optimization() {
     assert_eq!(buf.last_parsed_hash, initial_hash);
 }
 
+#[test]
+fn test_snippet_placeholder_visualized_and_replaced_on_typing() {
+    let mut buf = Buffer::new(PathBuf::from("src/main.rs")).unwrap();
+    buf.lines = vec!["    String::from_s".to_string()];
+    buf.cursor = types::Position { row: 0, col: 18 };
+
+    let mut editor = Editor {
+        buffers: vec![buf],
+        current_buffer: 0,
+        mode: Mode::Insert,
+        goto_return_mode: Mode::Normal,
+        match_return_mode: Mode::Normal,
+        match_state: MatchState::Menu,
+        clipboard: String::new(),
+        command_buffer: String::new(),
+        command_prefix: None,
+        command_completion_idx: 0,
+        status_message: None,
+        file_picker: None,
+        stdout: std::io::stdout(),
+        config: Config {
+            theme: "one-half-dark".to_string(),
+            editor: EditorConfig::default(),
+        },
+        config_path: None,
+        theme: Theme::default(),
+        lsp: None,
+        toml_lsp: None,
+        completion: havax::completion::CompletionMenu::new(),
+        lsp_doc_version: 1,
+        prev_buffer_idx: 0,
+        active_completion_req: 0,
+        pending_c: false,
+        pending_r: false,
+        diagnostics: std::collections::HashMap::new(),
+        active_completion_version: 1,
+        pending_definition_req: None,
+        pending_lsp_change: None,
+    };
+
+    let item = havax::lsp::CompletionItem {
+        label: "from_str".to_string(),
+        detail: Some("fn from_str(s: &str) -> Result<String, Infallible>".to_string()),
+        kind_name: "function".to_string(),
+        insert_text: Some("from_str(${1:s})".to_string()),
+        additional_text_edits: Vec::new(),
+    };
+    editor.completion.show(12, "from_s", vec![item]);
+    assert!(editor.completion.visible);
+
+    editor.accept_completion();
+    assert_eq!(editor.buf().lines[0], "    String::from_str(s)");
+    assert_eq!(editor.buf().anchor, Position { row: 0, col: 21 });
+    assert_eq!(editor.buf().cursor, Position { row: 0, col: 22 });
+    assert_ne!(editor.buf().anchor, editor.buf().cursor);
+    assert!(editor.buf().is_selected(0, 21));
+
+    let _ = editor.handle_key(
+        crossterm::event::KeyCode::Char('"'),
+        crossterm::event::KeyModifiers::NONE,
+    );
+    assert_eq!(editor.buf().lines[0], "    String::from_str(\"\")");
+    assert_eq!(editor.buf().cursor, Position { row: 0, col: 22 });
+
+    for ch in "Hello, world!".chars() {
+        let _ = editor.handle_key(
+            crossterm::event::KeyCode::Char(ch),
+            crossterm::event::KeyModifiers::NONE,
+        );
+    }
+    assert_eq!(editor.buf().lines[0], "    String::from_str(\"Hello, world!\")");
+    assert_eq!(editor.mode, Mode::Insert);
+}
+
+#[test]
+fn test_normal_mode_xc_immediately_deletes_line_and_preserves_newline() {
+    let mut buf = Buffer::new(PathBuf::from("test.rs")).unwrap();
+    buf.lines = vec![
+        "line 1".to_string(),
+        "line 2 to be changed".to_string(),
+        "line 3".to_string(),
+    ];
+    buf.cursor = Position { row: 1, col: 0 };
+    buf.anchor = buf.cursor;
+
+    let mut editor = Editor {
+        buffers: vec![buf],
+        current_buffer: 0,
+        mode: Mode::Normal,
+        goto_return_mode: Mode::Normal,
+        match_return_mode: Mode::Normal,
+        match_state: MatchState::Menu,
+        clipboard: String::new(),
+        command_buffer: String::new(),
+        command_prefix: None,
+        command_completion_idx: 0,
+        status_message: None,
+        file_picker: None,
+        stdout: std::io::stdout(),
+        config: Config::default(),
+        config_path: None,
+        theme: Theme::default(),
+        lsp: None,
+        toml_lsp: None,
+        completion: havax::completion::CompletionMenu::new(),
+        lsp_doc_version: 1,
+        prev_buffer_idx: 0,
+        active_completion_req: 0,
+        pending_c: false,
+        pending_r: false,
+        diagnostics: std::collections::HashMap::new(),
+        active_completion_version: 1,
+        pending_definition_req: None,
+        pending_lsp_change: None,
+    };
+
+    let _ = editor.handle_key(
+        crossterm::event::KeyCode::Char('x'),
+        crossterm::event::KeyModifiers::NONE,
+    );
+    assert_eq!(editor.buf().anchor, Position { row: 1, col: 0 });
+    assert_eq!(editor.buf().cursor, Position { row: 1, col: 20 });
+
+    let _ = editor.handle_key(
+        crossterm::event::KeyCode::Char('c'),
+        crossterm::event::KeyModifiers::NONE,
+    );
+
+    assert_eq!(editor.mode, Mode::Insert);
+    assert!(!editor.pending_c);
+    assert_eq!(editor.buf().lines.len(), 3);
+    assert_eq!(editor.buf().lines[0], "line 1");
+    assert_eq!(editor.buf().lines[1], "");
+    assert_eq!(editor.buf().lines[2], "line 3");
+    assert_eq!(editor.buf().cursor, Position { row: 1, col: 0 });
+    assert_eq!(editor.buf().anchor, Position { row: 1, col: 0 });
+
+    for ch in "inserted line".chars() {
+        let _ = editor.handle_key(
+            crossterm::event::KeyCode::Char(ch),
+            crossterm::event::KeyModifiers::NONE,
+        );
+    }
+
+    assert_eq!(editor.buf().lines.len(), 3);
+    assert_eq!(editor.buf().lines[1], "inserted line");
+}
+
+#[test]
+fn test_configurable_insert_final_newline() {
+    let toml1 = "[editor]\ninsert-final-newline = true\n";
+    let cfg1: Config = toml::from_str(toml1).unwrap();
+    assert!(cfg1.editor.insert_final_newline);
+
+    let toml2 = "[editor]\ninsert_final_newline = false\n";
+    let cfg2: Config = toml::from_str(toml2).unwrap();
+    assert!(!cfg2.editor.insert_final_newline);
+
+    let toml3 = "[editor]\ninsert-newline-in-lastline = true\n";
+    let cfg3: Config = toml::from_str(toml3).unwrap();
+    assert!(cfg3.editor.insert_final_newline);
+
+    let temp_dir = std::env::temp_dir();
+    let file_with_newline = temp_dir.join("havax_test_with_newline.rs");
+    let file_without_newline = temp_dir.join("havax_test_without_newline.rs");
+
+    let mut buf1 = Buffer::new(file_with_newline.clone()).unwrap();
+    buf1.lines = vec!["fn a() {}".to_string(), "fn b() {}".to_string()];
+    let mut editor1 = Editor {
+        buffers: vec![buf1],
+        current_buffer: 0,
+        mode: Mode::Normal,
+        goto_return_mode: Mode::Normal,
+        match_return_mode: Mode::Normal,
+        match_state: MatchState::Menu,
+        clipboard: String::new(),
+        command_buffer: String::new(),
+        command_prefix: None,
+        command_completion_idx: 0,
+        status_message: None,
+        file_picker: None,
+        stdout: std::io::stdout(),
+        config: Config {
+            theme: "one-half-dark".to_string(),
+            editor: EditorConfig {
+                insert_final_newline: true,
+                auto_format: false,
+                ..EditorConfig::default()
+            },
+        },
+        config_path: None,
+        theme: Theme::default(),
+        lsp: None,
+        toml_lsp: None,
+        completion: havax::completion::CompletionMenu::new(),
+        lsp_doc_version: 1,
+        prev_buffer_idx: 0,
+        active_completion_req: 0,
+        pending_c: false,
+        pending_r: false,
+        diagnostics: std::collections::HashMap::new(),
+        active_completion_version: 1,
+        pending_definition_req: None,
+        pending_lsp_change: None,
+    };
+    editor1.save_current().unwrap();
+    let saved1 = std::fs::read_to_string(&file_with_newline).unwrap();
+    assert_eq!(saved1, "fn a() {}\nfn b() {}\n");
+    let _ = std::fs::remove_file(&file_with_newline);
+
+    let mut buf2 = Buffer::new(file_without_newline.clone()).unwrap();
+    buf2.lines = vec!["fn a() {}".to_string(), "fn b() {}".to_string()];
+    let mut editor2 = Editor {
+        buffers: vec![buf2],
+        current_buffer: 0,
+        mode: Mode::Normal,
+        goto_return_mode: Mode::Normal,
+        match_return_mode: Mode::Normal,
+        match_state: MatchState::Menu,
+        clipboard: String::new(),
+        command_buffer: String::new(),
+        command_prefix: None,
+        command_completion_idx: 0,
+        status_message: None,
+        file_picker: None,
+        stdout: std::io::stdout(),
+        config: Config {
+            theme: "one-half-dark".to_string(),
+            editor: EditorConfig {
+                insert_final_newline: false,
+                auto_format: false,
+                ..EditorConfig::default()
+            },
+        },
+        config_path: None,
+        theme: Theme::default(),
+        lsp: None,
+        toml_lsp: None,
+        completion: havax::completion::CompletionMenu::new(),
+        lsp_doc_version: 1,
+        prev_buffer_idx: 0,
+        active_completion_req: 0,
+        pending_c: false,
+        pending_r: false,
+        diagnostics: std::collections::HashMap::new(),
+        active_completion_version: 1,
+        pending_definition_req: None,
+        pending_lsp_change: None,
+    };
+    editor2.save_current().unwrap();
+    let saved2 = std::fs::read_to_string(&file_without_newline).unwrap();
+    assert_eq!(saved2, "fn a() {}\nfn b() {}");
+    let _ = std::fs::remove_file(&file_without_newline);
+}
+
+#[test]
+fn test_autocomplete_exitcode_auto_import() {
+    let mut buf = Buffer::new(PathBuf::from("src/main.rs")).unwrap();
+    buf.lines = vec!["fn main() -> ExitCod".to_string()];
+    buf.cursor = Position { row: 0, col: 21 };
+
+    let mut editor = Editor {
+        buffers: vec![buf],
+        current_buffer: 0,
+        mode: Mode::Insert,
+        goto_return_mode: Mode::Normal,
+        match_return_mode: Mode::Normal,
+        match_state: MatchState::Menu,
+        clipboard: String::new(),
+        command_buffer: String::new(),
+        command_prefix: None,
+        command_completion_idx: 0,
+        status_message: None,
+        file_picker: None,
+        stdout: std::io::stdout(),
+        config: Config::default(),
+        config_path: None,
+        theme: Theme::default(),
+        lsp: None,
+        toml_lsp: None,
+        completion: havax::completion::CompletionMenu::new(),
+        lsp_doc_version: 1,
+        prev_buffer_idx: 0,
+        active_completion_req: 0,
+        pending_c: false,
+        pending_r: false,
+        diagnostics: std::collections::HashMap::new(),
+        active_completion_version: 1,
+        pending_definition_req: None,
+        pending_lsp_change: None,
+    };
+
+    editor.trigger_completion();
+    assert!(editor.completion.visible);
+    let exit_code_item = editor
+        .completion
+        .items
+        .iter()
+        .find(|it| it.label == "ExitCode")
+        .expect("ExitCode completion item");
+    assert_eq!(
+        exit_code_item.detail.as_deref(),
+        Some("(use std::process::ExitCode)")
+    );
+
+    let exit_code_idx = editor
+        .completion
+        .items
+        .iter()
+        .position(|it| it.label == "ExitCode")
+        .unwrap();
+    editor.completion.selected_idx = exit_code_idx;
+
+    let _ = editor.handle_key(
+        crossterm::event::KeyCode::Enter,
+        crossterm::event::KeyModifiers::NONE,
+    );
+
+    assert_eq!(editor.buf().lines.len(), 2);
+    assert_eq!(editor.buf().lines[0], "use std::process::ExitCode;");
+    assert_eq!(editor.buf().lines[1], "fn main() -> ExitCode");
+}
+
+#[test]
+fn test_autocomplete_suppresses_use_when_already_imported() {
+    let mut buf = Buffer::new(PathBuf::from("src/main.rs")).unwrap();
+    buf.lines = vec![
+        "use std::process::Command;".to_string(),
+        "".to_string(),
+        "fn run() {".to_string(),
+        "    Comma".to_string(),
+        "}".to_string(),
+    ];
+    buf.cursor = Position { row: 3, col: 9 };
+
+    let mut editor = Editor {
+        buffers: vec![buf],
+        current_buffer: 0,
+        mode: Mode::Insert,
+        goto_return_mode: Mode::Normal,
+        match_return_mode: Mode::Normal,
+        match_state: MatchState::Menu,
+        clipboard: String::new(),
+        command_buffer: String::new(),
+        command_prefix: None,
+        command_completion_idx: 0,
+        status_message: None,
+        file_picker: None,
+        stdout: std::io::stdout(),
+        config: Config::default(),
+        config_path: None,
+        theme: Theme::default(),
+        lsp: None,
+        toml_lsp: None,
+        completion: havax::completion::CompletionMenu::new(),
+        lsp_doc_version: 1,
+        prev_buffer_idx: 0,
+        active_completion_req: 0,
+        pending_c: false,
+        pending_r: false,
+        diagnostics: std::collections::HashMap::new(),
+        active_completion_version: 1,
+        pending_definition_req: None,
+        pending_lsp_change: None,
+    };
+
+    editor.trigger_completion();
+    assert!(editor.completion.visible);
+    let command_item = editor
+        .completion
+        .items
+        .iter()
+        .find(|it| it.label == "Command")
+        .expect("Command completion item");
+    assert_eq!(command_item.detail, None);
+
+    let command_idx = editor
+        .completion
+        .items
+        .iter()
+        .position(|it| it.label == "Command")
+        .unwrap();
+    editor.completion.selected_idx = command_idx;
+
+    let _ = editor.handle_key(
+        crossterm::event::KeyCode::Enter,
+        crossterm::event::KeyModifiers::NONE,
+    );
+
+    let use_count = editor
+        .buf()
+        .lines
+        .iter()
+        .filter(|l| l.trim() == "use std::process::Command;")
+        .count();
+    assert_eq!(use_count, 1);
+    assert_eq!(editor.buf().lines[3], "    Command");
+}
+
 
 
 
