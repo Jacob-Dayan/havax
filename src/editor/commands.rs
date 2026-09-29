@@ -181,6 +181,7 @@ impl Editor {
             "wa" | "wall" | "write-all" => {
                 let mut saved = 0;
                 let auto_fmt = self.config.editor.auto_format;
+                let insert_final_newline = self.config.editor.insert_final_newline;
                 for i in 0..self.buffers.len() {
                     let b = &self.buffers[i];
                     if b.modified
@@ -191,7 +192,16 @@ impl Editor {
                             self.format_buffer_silent(i);
                         }
                         let b = &mut self.buffers[i];
-                        let content = b.lines.join("\n");
+                        if let Some(parent) = b.path.parent()
+                            && !parent.as_os_str().is_empty()
+                            && !parent.exists()
+                        {
+                            let _ = std::fs::create_dir_all(parent);
+                        }
+                        let mut content = b.lines.join("\n");
+                        if insert_final_newline && !content.is_empty() && !content.ends_with('\n') {
+                            content.push('\n');
+                        }
                         if std::fs::write(&b.path, content).is_ok() {
                             b.modified = false;
                             saved += 1;
@@ -237,6 +247,7 @@ impl Editor {
             }
             "wqa" | "wqall" | "xa" => {
                 let auto_fmt = self.config.editor.auto_format;
+                let insert_final_newline = self.config.editor.insert_final_newline;
                 for i in 0..self.buffers.len() {
                     let b = &self.buffers[i];
                     if b.modified
@@ -247,7 +258,16 @@ impl Editor {
                             self.format_buffer_silent(i);
                         }
                         let b = &mut self.buffers[i];
-                        let content = b.lines.join("\n");
+                        if let Some(parent) = b.path.parent()
+                            && !parent.as_os_str().is_empty()
+                            && !parent.exists()
+                        {
+                            let _ = std::fs::create_dir_all(parent);
+                        }
+                        let mut content = b.lines.join("\n");
+                        if insert_final_newline && !content.is_empty() && !content.ends_with('\n') {
+                            content.push('\n');
+                        }
                         let _ = std::fs::write(&b.path, content);
                         b.modified = false;
                     }

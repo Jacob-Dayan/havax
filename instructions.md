@@ -156,7 +156,7 @@ hidden = false
 - Run `cargo clippy -- -D warnings` before committing — zero warnings policy.
 - Never put emojis anywhere in the codebase, UI text, status messages, or documentation.
 - Never use dummy comments, banners, or divider lines like `// ======`, `// --- ... ---`, or `/* ====== */`. Keep comments concise, strictly purposeful, or omit them entirely.
-- All tests in `src/main.rs` or `tests/integration_tests.rs`.
+- All tests organized modularly in `tests/` (`config_tests.rs`, `editor_tests.rs`, `lsp_tests.rs`, `syntax_tests.rs`).
 - Editor struct literals in tests must include ALL fields (adding a field to `Editor` requires updating every test instantiation).
 
 ### Adding a New Command
