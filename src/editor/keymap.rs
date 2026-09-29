@@ -691,8 +691,13 @@ impl Editor {
                     }
                     KeyCode::Char('e') => {
                         let buf = self.buf_mut();
-                        buf.cursor.row = buf.lines.len().saturating_sub(1);
-                        buf.cursor.col = 0;
+                        let last_row = buf.lines.len().saturating_sub(1);
+                        buf.cursor.row = last_row;
+                        buf.cursor.col = if return_mode == Mode::Visual {
+                            buf.lines[last_row].chars().count()
+                        } else {
+                            0
+                        };
                         if return_mode != Mode::Visual {
                             buf.anchor = buf.cursor;
                         }

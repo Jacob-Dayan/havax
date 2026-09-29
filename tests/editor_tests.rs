@@ -1894,3 +1894,103 @@ fn test_normal_mode_xc_immediately_deletes_line_and_preserves_newline() {
     assert_eq!(editor.buf().lines.len(), 3);
     assert_eq!(editor.buf().lines[1], "inserted line");
 }
+
+#[test]
+fn test_ggvge_marks_entire_file_including_last_line() {
+    let mut buf = Buffer::new(PathBuf::from("test.rs")).unwrap();
+    buf.lines = vec![
+        "fn main() {".to_string(),
+        "    let x = 42;".to_string(),
+        "    println!(\"{x}\");".to_string(),
+        "}".to_string(),
+    ];
+    let mut editor = Editor {
+        buffers: vec![buf],
+        current_buffer: 0,
+        mode: Mode::Normal,
+        goto_return_mode: Mode::Normal,
+        match_return_mode: Mode::Normal,
+        match_state: MatchState::Menu,
+        clipboard: String::new(),
+        command_buffer: String::new(),
+        command_prefix: None,
+        command_completion_idx: 0,
+        status_message: None,
+        file_picker: None,
+        stdout: std::io::stdout(),
+        config: Config::default(),
+        config_path: None,
+        theme: Theme::default(),
+        lsp: None,
+        toml_lsp: None,
+        completion: havax::completion::CompletionMenu::new(),
+        lsp_doc_version: 1,
+        prev_buffer_idx: 0,
+        active_completion_req: 0,
+        pending_c: false,
+        pending_r: false,
+        diagnostics: std::collections::HashMap::new(),
+        active_completion_version: 1,
+        pending_definition_req: None,
+        pending_lsp_change: None,
+    };
+
+    // Start anywhere (e.g. middle of file)
+    editor.buf_mut().cursor = Position { row: 2, col: 5 };
+    editor.buf_mut().anchor = editor.buf().cursor;
+
+    // 'g' -> 'g': goto start of file
+    editor
+        .handle_key(KeyCode::Char('g'), KeyModifiers::NONE)
+        .unwrap();
+    editor
+        .handle_key(KeyCode::Char('g'), KeyModifiers::NONE)
+        .unwrap();
+    assert_eq!(editor.mode, Mode::Normal);
+    assert_eq!(editor.buf().cursor, Position { row: 0, col: 0 });
+    assert_eq!(editor.buf().anchor, Position { row: 0, col: 0 });
+
+    // 'v': enter visual mode
+    editor
+        .handle_key(KeyCode::Char('v'), KeyModifiers::NONE)
+        .unwrap();
+    assert_eq!(editor.mode, Mode::Visual);
+    assert_eq!(editor.buf().anchor, Position { row: 0, col: 0 });
+
+    // 'g' -> 'e': goto end of file in visual mode
+    editor
+        .handle_key(KeyCode::Char('g'), KeyModifiers::NONE)
+        .unwrap();
+    assert_eq!(editor.mode, Mode::Goto);
+    editor
+        .handle_key(KeyCode::Char('e'), KeyModifiers::NONE)
+        .unwrap();
+    assert_eq!(editor.mode, Mode::Visual);
+
+    // Verify cursor is at the end of the last line and anchor at (0, 0)
+    assert_eq!(editor.buf().anchor, Position { row: 0, col: 0 });
+    assert_eq!(editor.buf().cursor, Position { row: 3, col: 1 });
+
+    // Verify EVERY line and character including the last line is marked/selected
+    let buf = editor.buf();
+    for row in 0..4 {
+        let line_len = buf.lines[row].chars().count();
+        for col in 0..line_len {
+            assert!(
+                buf.is_selected(row, col),
+                "Expected character at row {row}, col {col} ('{}') to be marked",
+                buf.lines[row].chars().nth(col).unwrap()
+            );
+        }
+    }
+
+    // Verify yanking the selection copies the entire file
+    editor
+        .handle_key(KeyCode::Char('y'), KeyModifiers::NONE)
+        .unwrap();
+    assert_eq!(editor.mode, Mode::Normal);
+    assert_eq!(
+        editor.clipboard,
+        "fn main() {\n    let x = 42;\n    println!(\"{x}\");\n}"
+    );
+}
