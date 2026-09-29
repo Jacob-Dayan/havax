@@ -212,14 +212,14 @@ hidden = false
     assert_eq!(cfg.theme, "one-half-dark");
     assert_eq!(cfg.editor.line_number, config::LineNumber::Relative);
     assert_eq!(cfg.editor.bufferline, config::Bufferline::Always);
-    assert_eq!(cfg.editor.mouse, true);
+    assert!(cfg.editor.mouse);
     assert_eq!(cfg.editor.cursor_shape.insert, config::CursorShape::Bar);
     assert_eq!(cfg.editor.cursor_shape.normal, config::CursorShape::Block);
     assert_eq!(
         cfg.editor.cursor_shape.select,
         config::CursorShape::Underline
     );
-    assert_eq!(cfg.editor.file_picker.hidden, false);
+    assert!(!cfg.editor.file_picker.hidden);
 }
 
 #[test]
@@ -3296,7 +3296,7 @@ fn test_helix_leader_mode_and_actions() {
     assert_eq!(editor.mode, Mode::Leader);
     let res = editor.handle_key(KeyCode::Char('q'), KeyModifiers::NONE);
     assert!(res.is_ok());
-    assert_eq!(res.unwrap(), true);
+    assert!(res.unwrap());
     assert_eq!(editor.mode, Mode::Normal);
     assert!(editor.status_message.is_some());
 
@@ -3305,7 +3305,7 @@ fn test_helix_leader_mode_and_actions() {
     assert_eq!(editor.mode, Mode::Leader);
     let res = editor.handle_key(KeyCode::Char('q'), KeyModifiers::NONE);
     assert!(res.is_ok());
-    assert_eq!(res.unwrap(), false);
+    assert!(!res.unwrap());
 
     let _ = std::fs::remove_dir_all(&temp_dir);
 }
@@ -4219,6 +4219,287 @@ fn test_autocomplete_suppresses_use_when_already_imported() {
         .count();
     assert_eq!(use_count, 1);
     assert_eq!(editor.buf().lines[3], "    Command");
+}
+
+#[test]
+fn test_autocomplete_every_module_and_function_single_tab_enter() {
+    // 1. Test standard module auto-import: "atomic" -> "use std::sync::atomic;"
+    let mut buf = Buffer::new(PathBuf::from("src/main.rs")).unwrap();
+    buf.lines = vec![
+        "fn main() {".to_string(),
+        "    atom".to_string(),
+        "}".to_string(),
+    ];
+    buf.cursor = Position { row: 1, col: 8 }; // end of "atom"
+
+    let mut editor = Editor {
+        buffers: vec![buf],
+        current_buffer: 0,
+        mode: Mode::Insert,
+        goto_return_mode: Mode::Normal,
+        match_return_mode: Mode::Normal,
+        match_state: MatchState::Menu,
+        clipboard: String::new(),
+        command_buffer: String::new(),
+        command_prefix: None,
+        command_completion_idx: 0,
+        status_message: None,
+        file_picker: None,
+        stdout: std::io::stdout(),
+        config: Config::default(),
+        config_path: None,
+        theme: Theme::default(),
+        lsp: None,
+        toml_lsp: None,
+        completion: havax::completion::CompletionMenu::new(),
+        lsp_doc_version: 1,
+        prev_buffer_idx: 0,
+        active_completion_req: 0,
+        pending_c: false,
+        pending_r: false,
+        diagnostics: std::collections::HashMap::new(),
+        active_completion_version: 1,
+        pending_definition_req: None,
+        pending_lsp_change: None,
+    };
+
+    editor.trigger_completion();
+    assert!(editor.completion.visible);
+    let atomic_idx = editor
+        .completion
+        .items
+        .iter()
+        .position(|it| it.label == "atomic")
+        .expect("atomic module completion");
+    assert_eq!(
+        editor.completion.items[atomic_idx].detail.as_deref(),
+        Some("(use std::sync::atomic)")
+    );
+
+    // Single <Tab><Enter> key cycle
+    editor.completion.selected_idx = atomic_idx;
+    let _ = editor.handle_key(KeyCode::Enter, KeyModifiers::NONE);
+
+    assert_eq!(editor.buf().lines[0], "use std::sync::atomic;");
+    assert_eq!(editor.buf().lines[2], "    atomic");
+
+    // 2. Test standard function auto-import: "spawn" -> "use std::thread::spawn;"
+    let mut buf2 = Buffer::new(PathBuf::from("src/main.rs")).unwrap();
+    buf2.lines = vec![
+        "fn main() {".to_string(),
+        "    spaw".to_string(),
+        "}".to_string(),
+    ];
+    buf2.cursor = Position { row: 1, col: 8 };
+
+    editor.buffers = vec![buf2];
+    editor.trigger_completion();
+    assert!(editor.completion.visible);
+    let spawn_idx = editor
+        .completion
+        .items
+        .iter()
+        .position(|it| it.label == "spawn")
+        .expect("spawn function completion");
+    assert_eq!(
+        editor.completion.items[spawn_idx].detail.as_deref(),
+        Some("(use std::thread::spawn)")
+    );
+    assert_eq!(editor.completion.items[spawn_idx].kind_name, "function");
+
+    editor.completion.selected_idx = spawn_idx;
+    let _ = editor.handle_key(KeyCode::Enter, KeyModifiers::NONE);
+
+    assert_eq!(editor.buf().lines[0], "use std::thread::spawn;");
+    assert_eq!(editor.buf().lines[2], "    spawn");
+
+    // 3. Test standard function auto-import: "read_to_string" -> "use std::fs::read_to_string;"
+    let mut buf3 = Buffer::new(PathBuf::from("src/main.rs")).unwrap();
+    buf3.lines = vec![
+        "fn main() {".to_string(),
+        "    read_to_".to_string(),
+        "}".to_string(),
+    ];
+    buf3.cursor = Position { row: 1, col: 12 };
+
+    editor.buffers = vec![buf3];
+    editor.trigger_completion();
+    assert!(editor.completion.visible);
+    let rts_idx = editor
+        .completion
+        .items
+        .iter()
+        .position(|it| it.label == "read_to_string")
+        .expect("read_to_string function completion");
+    assert_eq!(
+        editor.completion.items[rts_idx].detail.as_deref(),
+        Some("(use std::fs::read_to_string)")
+    );
+
+    editor.completion.selected_idx = rts_idx;
+    let _ = editor.handle_key(KeyCode::Enter, KeyModifiers::NONE);
+
+    assert_eq!(editor.buf().lines[0], "use std::fs::read_to_string;");
+    assert_eq!(editor.buf().lines[2], "    read_to_string");
+
+    // 4. Test standard module auto-import: "mpsc" -> "use std::sync::mpsc;"
+    let mut buf4 = Buffer::new(PathBuf::from("src/main.rs")).unwrap();
+    buf4.lines = vec![
+        "fn main() {".to_string(),
+        "    mps".to_string(),
+        "}".to_string(),
+    ];
+    buf4.cursor = Position { row: 1, col: 7 };
+
+    editor.buffers = vec![buf4];
+    editor.trigger_completion();
+    assert!(editor.completion.visible);
+    let mpsc_idx = editor
+        .completion
+        .items
+        .iter()
+        .position(|it| it.label == "mpsc")
+        .expect("mpsc module completion");
+    assert_eq!(
+        editor.completion.items[mpsc_idx].detail.as_deref(),
+        Some("(use std::sync::mpsc)")
+    );
+
+    editor.completion.selected_idx = mpsc_idx;
+    let _ = editor.handle_key(KeyCode::Enter, KeyModifiers::NONE);
+
+    assert_eq!(editor.buf().lines[0], "use std::sync::mpsc;");
+    assert_eq!(editor.buf().lines[2], "    mpsc");
+
+    // 5. Test Cargo.toml dependency crate auto-import: "ratatui" -> "use ratatui;"
+    let mut buf5 = Buffer::new(PathBuf::from("src/main.rs")).unwrap();
+    buf5.lines = vec![
+        "fn main() {".to_string(),
+        "    ratatu".to_string(),
+        "}".to_string(),
+    ];
+    buf5.cursor = Position { row: 1, col: 10 };
+
+    editor.buffers = vec![buf5];
+    editor.trigger_completion();
+    assert!(editor.completion.visible);
+    let ratatui_idx = editor
+        .completion
+        .items
+        .iter()
+        .position(|it| it.label == "ratatui")
+        .expect("ratatui dependency completion");
+    assert_eq!(
+        editor.completion.items[ratatui_idx].detail.as_deref(),
+        Some("(use ratatui)")
+    );
+
+    editor.completion.selected_idx = ratatui_idx;
+    let _ = editor.handle_key(KeyCode::Enter, KeyModifiers::NONE);
+
+    assert_eq!(editor.buf().lines[0], "use ratatui;");
+    assert_eq!(editor.buf().lines[2], "    ratatui");
+
+    // 6. Test workspace module auto-import: "buffer" -> "use crate::buffer;"
+    let mut buf6 = Buffer::new(PathBuf::from("src/main.rs")).unwrap();
+    buf6.lines = vec![
+        "fn main() {".to_string(),
+        "    buffe".to_string(),
+        "}".to_string(),
+    ];
+    buf6.cursor = Position { row: 1, col: 9 };
+
+    editor.buffers = vec![buf6];
+    editor.trigger_completion();
+    assert!(editor.completion.visible);
+    let buffer_idx = editor
+        .completion
+        .items
+        .iter()
+        .position(|it| it.label == "buffer")
+        .expect("buffer workspace module completion");
+    assert_eq!(
+        editor.completion.items[buffer_idx].detail.as_deref(),
+        Some("(use crate::buffer)")
+    );
+
+    editor.completion.selected_idx = buffer_idx;
+    let _ = editor.handle_key(KeyCode::Enter, KeyModifiers::NONE);
+
+    assert_eq!(editor.buf().lines[0], "use crate::buffer;");
+    assert_eq!(editor.buf().lines[2], "    buffer");
+}
+
+#[test]
+fn test_autocomplete_tab_enter_key_handling() {
+    let mut buf = Buffer::new(PathBuf::from("src/main.rs")).unwrap();
+    buf.lines = vec![
+        "fn main() {".to_string(),
+        "    curren".to_string(),
+        "}".to_string(),
+    ];
+    buf.cursor = Position { row: 1, col: 10 };
+
+    let mut editor = Editor {
+        buffers: vec![buf],
+        current_buffer: 0,
+        mode: Mode::Insert,
+        goto_return_mode: Mode::Normal,
+        match_return_mode: Mode::Normal,
+        match_state: MatchState::Menu,
+        clipboard: String::new(),
+        command_buffer: String::new(),
+        command_prefix: None,
+        command_completion_idx: 0,
+        status_message: None,
+        file_picker: None,
+        stdout: std::io::stdout(),
+        config: Config::default(),
+        config_path: None,
+        theme: Theme::default(),
+        lsp: None,
+        toml_lsp: None,
+        completion: havax::completion::CompletionMenu::new(),
+        lsp_doc_version: 1,
+        prev_buffer_idx: 0,
+        active_completion_req: 0,
+        pending_c: false,
+        pending_r: false,
+        diagnostics: std::collections::HashMap::new(),
+        active_completion_version: 1,
+        pending_definition_req: None,
+        pending_lsp_change: None,
+    };
+
+    editor.trigger_completion();
+    assert!(editor.completion.visible);
+
+    // Initial selected index is 0
+    assert_eq!(editor.completion.selected_idx, 0);
+
+    // Press <Tab> to navigate to next completion
+    let _ = editor.handle_key(KeyCode::Tab, KeyModifiers::NONE);
+    assert_eq!(editor.completion.selected_idx, 1);
+
+    // Press <BackTab> to return to first completion
+    let _ = editor.handle_key(KeyCode::BackTab, KeyModifiers::NONE);
+    assert_eq!(editor.completion.selected_idx, 0);
+
+    // Select the current_dir item specifically
+    let cd_idx = editor
+        .completion
+        .items
+        .iter()
+        .position(|it| it.label == "current_dir")
+        .expect("current_dir function completion");
+    editor.completion.selected_idx = cd_idx;
+
+    // Press <Enter> to accept in just one <Tab><Enter> flow
+    let _ = editor.handle_key(KeyCode::Enter, KeyModifiers::NONE);
+
+    assert_eq!(editor.buf().lines[0], "use std::env::current_dir;");
+    assert_eq!(editor.buf().lines[2], "    current_dir");
+    assert!(!editor.completion.visible);
 }
 
 

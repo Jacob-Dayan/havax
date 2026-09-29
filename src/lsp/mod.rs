@@ -1,4 +1,5 @@
 pub mod completion;
+pub mod rust_symbols;
 
 use std::{
     collections::HashMap,
@@ -186,6 +187,7 @@ impl LspClient {
         let is_running_reader = Arc::clone(&is_running);
         let pending_reqs_reader = Arc::clone(&pending_requests);
         let event_tx_reader = event_tx.clone();
+        let cmd_tx_reader = cmd_tx.clone();
 
         thread::spawn(move || {
             let mut reader = BufReader::new(stdout);
@@ -224,6 +226,7 @@ impl LspClient {
                             &json_val,
                             &pending_reqs_reader,
                             &event_tx_reader,
+                            &cmd_tx_reader,
                         );
                     }
                 }
@@ -274,7 +277,7 @@ impl LspClient {
                                 "insertReplaceSupport": true,
                                 "labelDetailsSupport": true,
                                 "resolveSupport": {
-                                    "properties": ["documentation", "detail", "additionalTextEdits"]
+                                    "properties": ["documentation", "detail"]
                                 }
                             },
                             "contextSupport": true
@@ -778,60 +781,85 @@ fn handle_lsp_message(
     val: &Value,
     pending_requests: &Arc<Mutex<HashMap<u64, RequestKind>>>,
     event_tx: &Sender<LspEvent>,
+    cmd_tx: &Sender<LspCommand>,
 ) {
-    if val.get("method").and_then(|m| m.as_str()) == Some("textDocument/publishDiagnostics") {
-        if let Some(params) = val.get("params")
-            && let Some(uri_str) = params.get("uri").and_then(|u| u.as_str())
-            && let Some(path) = uri_to_path(uri_str)
-        {
-            let mut diags = Vec::new();
-            if let Some(diag_array) = params.get("diagnostics").and_then(|d| d.as_array()) {
-                for item in diag_array {
-                    let line = item
-                        .get("range")
-                        .and_then(|r| r.get("start"))
-                        .and_then(|s| s.get("line"))
-                        .and_then(|l| l.as_u64())
-                        .unwrap_or(0) as usize;
-                    let col_start = item
-                        .get("range")
-                        .and_then(|r| r.get("start"))
-                        .and_then(|s| s.get("character"))
-                        .and_then(|c| c.as_u64())
-                        .unwrap_or(0) as usize;
-                    let col_end = item
-                        .get("range")
-                        .and_then(|r| r.get("end"))
-                        .and_then(|s| s.get("character"))
-                        .and_then(|c| c.as_u64())
-                        .map(|c| c as usize)
-                        .unwrap_or(col_start + 1);
-                    let sev_num = item.get("severity").and_then(|s| s.as_u64()).unwrap_or(1);
-                    let severity = match sev_num {
-                        1 => DiagnosticSeverity::Error,
-                        2 => DiagnosticSeverity::Warning,
-                        3 => DiagnosticSeverity::Information,
-                        _ => DiagnosticSeverity::Hint,
-                    };
-                    let message = item
-                        .get("message")
-                        .and_then(|m| m.as_str())
-                        .unwrap_or("")
-                        .to_string();
+    if let Some(method) = val.get("method").and_then(|m| m.as_str()) {
+        if method == "textDocument/publishDiagnostics" {
+            if let Some(params) = val.get("params")
+                && let Some(uri_str) = params.get("uri").and_then(|u| u.as_str())
+                && let Some(path) = uri_to_path(uri_str)
+            {
+                let mut diags = Vec::new();
+                if let Some(diag_array) = params.get("diagnostics").and_then(|d| d.as_array()) {
+                    for item in diag_array {
+                        let line = item
+                            .get("range")
+                            .and_then(|r| r.get("start"))
+                            .and_then(|s| s.get("line"))
+                            .and_then(|l| l.as_u64())
+                            .unwrap_or(0) as usize;
+                        let col_start = item
+                            .get("range")
+                            .and_then(|r| r.get("start"))
+                            .and_then(|s| s.get("character"))
+                            .and_then(|c| c.as_u64())
+                            .unwrap_or(0) as usize;
+                        let col_end = item
+                            .get("range")
+                            .and_then(|r| r.get("end"))
+                            .and_then(|s| s.get("character"))
+                            .and_then(|c| c.as_u64())
+                            .map(|c| c as usize)
+                            .unwrap_or(col_start + 1);
+                        let sev_num = item.get("severity").and_then(|s| s.as_u64()).unwrap_or(1);
+                        let severity = match sev_num {
+                            1 => DiagnosticSeverity::Error,
+                            2 => DiagnosticSeverity::Warning,
+                            3 => DiagnosticSeverity::Information,
+                            _ => DiagnosticSeverity::Hint,
+                        };
+                        let message = item
+                            .get("message")
+                            .and_then(|m| m.as_str())
+                            .unwrap_or("")
+                            .to_string();
 
-                    diags.push(Diagnostic {
-                        line,
-                        col_start,
-                        col_end,
-                        severity,
-                        message,
-                    });
+                        diags.push(Diagnostic {
+                            line,
+                            col_start,
+                            col_end,
+                            severity,
+                            message,
+                        });
+                    }
                 }
+                let _ = event_tx.send(LspEvent::PublishDiagnostics {
+                    path,
+                    diagnostics: diags,
+                });
             }
-            let _ = event_tx.send(LspEvent::PublishDiagnostics {
-                path,
-                diagnostics: diags,
-            });
+        } else if let Some(id) = val.get("id") {
+            if method == "workspace/configuration" {
+                let items_count = val
+                    .get("params")
+                    .and_then(|p| p.get("items"))
+                    .and_then(|i| i.as_array())
+                    .map(|a| a.len())
+                    .unwrap_or(1);
+                let resp = json!({
+                    "jsonrpc": "2.0",
+                    "id": id,
+                    "result": vec![json!({}); items_count]
+                });
+                let _ = cmd_tx.send(LspCommand::Payload(resp));
+            } else if method == "client/registerCapability" || method == "window/workDoneProgress/create" {
+                let resp = json!({
+                    "jsonrpc": "2.0",
+                    "id": id,
+                    "result": null
+                });
+                let _ = cmd_tx.send(LspCommand::Payload(resp));
+            }
         }
         return;
     }
@@ -864,7 +892,7 @@ fn handle_lsp_message(
                 if let Some(items_list) = items_val {
                     for it in items_list {
                         if let Some(label) = it.get("label").and_then(|l| l.as_str()) {
-                            let detail = it.get("detail").and_then(|d| d.as_str()).map(String::from);
+                            let mut detail = it.get("detail").and_then(|d| d.as_str()).map(String::from);
                             let kind_num = it.get("kind").and_then(|k| k.as_u64()).unwrap_or(0);
                             let kind_name = completion_kind_to_str(kind_num).to_string();
                             let insert_text = it
@@ -880,6 +908,25 @@ fn handle_lsp_message(
                                 .get("additionalTextEdits")
                                 .map(parse_text_edits)
                                 .unwrap_or_default();
+
+                            if (detail.is_none() || !detail.as_deref().unwrap_or("").contains("(use "))
+                                && let Some(ld) = it.get("labelDetails")
+                            {
+                                if let Some(desc) = ld.get("description").and_then(|d| d.as_str()) {
+                                    if desc.contains("::") || desc.contains("(use ") {
+                                        let clean_desc = if desc.starts_with("(use ") {
+                                            desc.to_string()
+                                        } else {
+                                            format!("(use {desc})")
+                                        };
+                                        detail = Some(clean_desc);
+                                    }
+                                } else if let Some(ld_det) = ld.get("detail").and_then(|d| d.as_str())
+                                    && ld_det.contains("(use ")
+                                {
+                                    detail = Some(ld_det.trim().to_string());
+                                }
+                            }
 
                             completions.push(CompletionItem {
                                 label: label.to_string(),
@@ -1953,651 +2000,19 @@ pub fn is_import_in_buffer(lines: &[String], import_path: &str) -> bool {
 }
 
 pub fn get_auto_import_for_item(label: &str, detail: Option<&str>) -> Option<String> {
-    if let Some(d) = detail
-        && let Some(start) = d.find("(use ")
-    {
-        let rem = &d[start + 5..];
-        if let Some(end) = rem.find(')') {
-            let path = rem[..end].trim().to_string();
-            if !path.is_empty() {
-                return Some(path);
-            }
-        }
-    }
-
-    let clean_label = label.trim_end_matches("!(...)").trim_end_matches("![...]");
-    match clean_label {
-        "BufWriter" => Some("std::io::BufWriter".to_string()),
-        "BufReader" => Some("std::io::BufReader".to_string()),
-        "LineWriter" => Some("std::io::LineWriter".to_string()),
-        "Write" => Some("std::io::Write".to_string()),
-        "Read" => Some("std::io::Read".to_string()),
-        "BufRead" => Some("std::io::BufRead".to_string()),
-        "Seek" => Some("std::io::Seek".to_string()),
-        "Cursor" => Some("std::io::Cursor".to_string()),
-        "stdin" => Some("std::io::stdin".to_string()),
-        "stdout" => Some("std::io::stdout".to_string()),
-        "stderr" => Some("std::io::stderr".to_string()),
-        "File" => Some("std::fs::File".to_string()),
-        "OpenOptions" => Some("std::fs::OpenOptions".to_string()),
-        "DirEntry" => Some("std::fs::DirEntry".to_string()),
-        "ReadDir" => Some("std::fs::ReadDir".to_string()),
-        "Metadata" => Some("std::fs::Metadata".to_string()),
-        "Permissions" => Some("std::fs::Permissions".to_string()),
-        "read_to_string" => Some("std::fs::read_to_string".to_string()),
-        "read_dir" => Some("std::fs::read_dir".to_string()),
-        "create_dir" => Some("std::fs::create_dir".to_string()),
-        "create_dir_all" => Some("std::fs::create_dir_all".to_string()),
-        "remove_file" => Some("std::fs::remove_file".to_string()),
-        "remove_dir" => Some("std::fs::remove_dir".to_string()),
-        "remove_dir_all" => Some("std::fs::remove_dir_all".to_string()),
-        "canonicalize" => Some("std::fs::canonicalize".to_string()),
-        "Path" => Some("std::path::Path".to_string()),
-        "PathBuf" => Some("std::path::PathBuf".to_string()),
-        "HashMap" => Some("std::collections::HashMap".to_string()),
-        "HashSet" => Some("std::collections::HashSet".to_string()),
-        "BTreeMap" => Some("std::collections::BTreeMap".to_string()),
-        "BTreeSet" => Some("std::collections::BTreeSet".to_string()),
-        "VecDeque" => Some("std::collections::VecDeque".to_string()),
-        "BinaryHeap" => Some("std::collections::BinaryHeap".to_string()),
-        "LinkedList" => Some("std::collections::LinkedList".to_string()),
-        "Command" => Some("std::process::Command".to_string()),
-        "Child" => Some("std::process::Child".to_string()),
-        "ChildStdin" => Some("std::process::ChildStdin".to_string()),
-        "ChildStdout" => Some("std::process::ChildStdout".to_string()),
-        "ExitStatus" => Some("std::process::ExitStatus".to_string()),
-        "ExitCode" => Some("std::process::ExitCode".to_string()),
-        "Stdio" => Some("std::process::Stdio".to_string()),
-        "Duration" => Some("std::time::Duration".to_string()),
-        "Instant" => Some("std::time::Instant".to_string()),
-        "SystemTime" => Some("std::time::SystemTime".to_string()),
-        "Arc" => Some("std::sync::Arc".to_string()),
-        "Mutex" => Some("std::sync::Mutex".to_string()),
-        "RwLock" => Some("std::sync::RwLock".to_string()),
-        "MutexGuard" => Some("std::sync::MutexGuard".to_string()),
-        "RwLockReadGuard" => Some("std::sync::RwLockReadGuard".to_string()),
-        "RwLockWriteGuard" => Some("std::sync::RwLockWriteGuard".to_string()),
-        "Barrier" => Some("std::sync::Barrier".to_string()),
-        "Condvar" => Some("std::sync::Condvar".to_string()),
-        "Once" => Some("std::sync::Once".to_string()),
-        "OnceLock" => Some("std::sync::OnceLock".to_string()),
-        "Weak" => Some("std::sync::Weak".to_string()),
-        "AtomicBool" => Some("std::sync::atomic::AtomicBool".to_string()),
-        "AtomicUsize" => Some("std::sync::atomic::AtomicUsize".to_string()),
-        "AtomicI64" => Some("std::sync::atomic::AtomicI64".to_string()),
-        "AtomicI32" => Some("std::sync::atomic::AtomicI32".to_string()),
-        "AtomicU64" => Some("std::sync::atomic::AtomicU64".to_string()),
-        "AtomicU32" => Some("std::sync::atomic::AtomicU32".to_string()),
-        "AtomicPtr" => Some("std::sync::atomic::AtomicPtr".to_string()),
-        "Ordering" => Some("std::sync::atomic::Ordering".to_string()),
-        "Cell" => Some("std::cell::Cell".to_string()),
-        "RefCell" => Some("std::cell::RefCell".to_string()),
-        "Rc" => Some("std::rc::Rc".to_string()),
-        "OsStr" => Some("std::ffi::OsStr".to_string()),
-        "OsString" => Some("std::ffi::OsString".to_string()),
-        "CString" => Some("std::ffi::CString".to_string()),
-        "CStr" => Some("std::ffi::CStr".to_string()),
-        "Display" => Some("std::fmt::Display".to_string()),
-        "Debug" => Some("std::fmt::Debug".to_string()),
-        "Formatter" => Some("std::fmt::Formatter".to_string()),
-        "thread" => Some("std::thread".to_string()),
-        "spawn" => Some("std::thread::spawn".to_string()),
-        "JoinHandle" => Some("std::thread::JoinHandle".to_string()),
-        "Error" => Some("std::error::Error".to_string()),
-        "TcpStream" => Some("std::net::TcpStream".to_string()),
-        "TcpListener" => Some("std::net::TcpListener".to_string()),
-        "UdpSocket" => Some("std::net::UdpSocket".to_string()),
-        "SocketAddr" => Some("std::net::SocketAddr".to_string()),
-        "IpAddr" => Some("std::net::IpAddr".to_string()),
-        "Ipv4Addr" => Some("std::net::Ipv4Addr".to_string()),
-        "Ipv6Addr" => Some("std::net::Ipv6Addr".to_string()),
-        "Pin" => Some("std::pin::Pin".to_string()),
-        "Future" => Some("std::future::Future".to_string()),
-        _ => None,
-    }
+    rust_symbols::resolve_rust_auto_import(label, detail)
 }
 
 /// Fallback / curated list of standard Rust completion items (matching Helix, rust-analyzer, and all keywords)
 pub fn get_standard_rust_completions(prefix: &str) -> Vec<CompletionItem> {
-    let standard_items = [
-        // Keywords with rich snippets
-        ("let", "keyword", Some("keyword let"), "let"),
-        ("mut", "keyword", Some("keyword mut"), "mut"),
-        ("fn", "keyword", Some("fn function_name(args) {\n    \n}"), "fn $1($2) {\n    $0\n}"),
-        ("struct", "keyword", Some("struct Template {\n    \n}"), "struct $1 {\n    $0\n}"),
-        ("enum", "keyword", Some("enum Template {\n    \n}"), "enum $1 {\n    $0\n}"),
-        ("impl", "keyword", Some("impl Type {\n    \n}"), "impl $1 {\n    $0\n}"),
-        ("trait", "keyword", Some("trait TraitName {\n    \n}"), "trait $1 {\n    $0\n}"),
-        ("match", "keyword", Some("match expr {\n    \n}"), "match $1 {\n    $0\n}"),
-        ("if", "keyword", Some("if condition {\n    \n}"), "if $1 {\n    $0\n}"),
-        ("while", "keyword", Some("while condition {\n    \n}"), "while $1 {\n    $0\n}"),
-        ("for", "keyword", Some("for item in iter {\n    \n}"), "for $1 in $2 {\n    $0\n}"),
-        ("loop", "keyword", Some("loop {\n    \n}"), "loop {\n    $0\n}"),
-        // Additional Snippets & Templates
-        ("impl trait", "snippet", Some("impl Trait for Type {\n    \n}"), "impl $1 for $2 {\n    $0\n}"),
-        ("closure", "snippet", Some("|$1| {\n    $0\n}"), "|$1| {\n    $0\n}"),
-        ("||", "snippet", Some("|$1| {\n    $0\n}"), "|$1| {\n    $0\n}"),
-        ("if let", "snippet", Some("if let Pattern = expr {\n    \n}"), "if let $1 = $2 {\n    $0\n}"),
-        ("while let", "snippet", Some("while let Pattern = expr {\n    \n}"), "while let $1 = $2 {\n    $0\n}"),
-        ("test", "snippet", Some("#[test]\nfn test_name() {\n    \n}"), "#[test]\nfn $1() {\n    $0\n}"),
-        ("mod tests", "snippet", Some("#[cfg(test)]\nmod tests {\n    \n}"), "#[cfg(test)]\nmod tests {\n    use super::*;\n\n    #[test]\n    fn $1() {\n        $0\n    }\n}"),
-        // Keywords
-        ("pub", "keyword", Some("keyword pub"), "pub"),
-        ("use", "keyword", Some("keyword use"), "use"),
-        ("else", "keyword", Some("keyword else"), "else"),
-        ("return", "keyword", Some("keyword return"), "return"),
-        ("async", "keyword", Some("keyword async"), "async"),
-        ("await", "keyword", Some("keyword await"), "await"),
-        ("const", "keyword", Some("keyword const"), "const"),
-        ("static", "keyword", Some("keyword static"), "static"),
-        ("type", "keyword", Some("keyword type"), "type"),
-        ("where", "keyword", Some("keyword where"), "where"),
-        ("unsafe", "keyword", Some("keyword unsafe"), "unsafe"),
-        ("extern", "keyword", Some("keyword extern"), "extern"),
-        ("crate", "keyword", Some("keyword crate"), "crate"),
-        ("super", "keyword", Some("keyword super"), "super"),
-        ("self", "keyword", Some("keyword self"), "self"),
-        ("Self", "type", Some("Self type"), "Self"),
-        ("mod", "keyword", Some("keyword mod"), "mod"),
-        ("as", "keyword", Some("keyword as"), "as"),
-        ("dyn", "keyword", Some("keyword dyn"), "dyn"),
-        ("ref", "keyword", Some("keyword ref"), "ref"),
-        ("move", "keyword", Some("keyword move"), "move"),
-        ("break", "keyword", Some("keyword break"), "break"),
-        ("continue", "keyword", Some("keyword continue"), "continue"),
-        ("true", "keyword", Some("bool true"), "true"),
-        ("false", "keyword", Some("bool false"), "false"),
-        ("in", "keyword", Some("keyword in"), "in"),
-        // Standard Types & Structs (with auto-import path details)
-        (
-            "BufWriter",
-            "struct",
-            Some("(use std::io::BufWriter)"),
-            "BufWriter",
-        ),
-        (
-            "BufReader",
-            "struct",
-            Some("(use std::io::BufReader)"),
-            "BufReader",
-        ),
-        (
-            "LineWriter",
-            "struct",
-            Some("(use std::io::LineWriter)"),
-            "LineWriter",
-        ),
-        ("Write", "interface", Some("(use std::io::Write)"), "Write"),
-        ("Read", "interface", Some("(use std::io::Read)"), "Read"),
-        (
-            "BufRead",
-            "interface",
-            Some("(use std::io::BufRead)"),
-            "BufRead",
-        ),
-        ("Seek", "interface", Some("(use std::io::Seek)"), "Seek"),
-        ("Cursor", "struct", Some("(use std::io::Cursor)"), "Cursor"),
-        ("stdin", "function", Some("(use std::io::stdin)"), "stdin"),
-        (
-            "stdout",
-            "function",
-            Some("(use std::io::stdout)"),
-            "stdout",
-        ),
-        (
-            "stderr",
-            "function",
-            Some("(use std::io::stderr)"),
-            "stderr",
-        ),
-        ("File", "struct", Some("(use std::fs::File)"), "File"),
-        (
-            "OpenOptions",
-            "struct",
-            Some("(use std::fs::OpenOptions)"),
-            "OpenOptions",
-        ),
-        (
-            "DirEntry",
-            "struct",
-            Some("(use std::fs::DirEntry)"),
-            "DirEntry",
-        ),
-        (
-            "ReadDir",
-            "struct",
-            Some("(use std::fs::ReadDir)"),
-            "ReadDir",
-        ),
-        (
-            "Metadata",
-            "struct",
-            Some("(use std::fs::Metadata)"),
-            "Metadata",
-        ),
-        (
-            "Permissions",
-            "struct",
-            Some("(use std::fs::Permissions)"),
-            "Permissions",
-        ),
-        (
-            "read_to_string",
-            "function",
-            Some("(use std::fs::read_to_string)"),
-            "read_to_string",
-        ),
-        (
-            "read_dir",
-            "function",
-            Some("(use std::fs::read_dir)"),
-            "read_dir",
-        ),
-        (
-            "create_dir",
-            "function",
-            Some("(use std::fs::create_dir)"),
-            "create_dir",
-        ),
-        (
-            "create_dir_all",
-            "function",
-            Some("(use std::fs::create_dir_all)"),
-            "create_dir_all",
-        ),
-        (
-            "remove_file",
-            "function",
-            Some("(use std::fs::remove_file)"),
-            "remove_file",
-        ),
-        (
-            "remove_dir",
-            "function",
-            Some("(use std::fs::remove_dir)"),
-            "remove_dir",
-        ),
-        (
-            "remove_dir_all",
-            "function",
-            Some("(use std::fs::remove_dir_all)"),
-            "remove_dir_all",
-        ),
-        (
-            "canonicalize",
-            "function",
-            Some("(use std::fs::canonicalize)"),
-            "canonicalize",
-        ),
-        ("Path", "struct", Some("(use std::path::Path)"), "Path"),
-        (
-            "PathBuf",
-            "struct",
-            Some("(use std::path::PathBuf)"),
-            "PathBuf",
-        ),
-        (
-            "HashMap",
-            "struct",
-            Some("(use std::collections::HashMap)"),
-            "HashMap",
-        ),
-        (
-            "HashSet",
-            "struct",
-            Some("(use std::collections::HashSet)"),
-            "HashSet",
-        ),
-        (
-            "BTreeMap",
-            "struct",
-            Some("(use std::collections::BTreeMap)"),
-            "BTreeMap",
-        ),
-        (
-            "BTreeSet",
-            "struct",
-            Some("(use std::collections::BTreeSet)"),
-            "BTreeSet",
-        ),
-        (
-            "VecDeque",
-            "struct",
-            Some("(use std::collections::VecDeque)"),
-            "VecDeque",
-        ),
-        (
-            "BinaryHeap",
-            "struct",
-            Some("(use std::collections::BinaryHeap)"),
-            "BinaryHeap",
-        ),
-        (
-            "LinkedList",
-            "struct",
-            Some("(use std::collections::LinkedList)"),
-            "LinkedList",
-        ),
-        (
-            "Command",
-            "struct",
-            Some("(use std::process::Command)"),
-            "Command",
-        ),
-        (
-            "Child",
-            "struct",
-            Some("(use std::process::Child)"),
-            "Child",
-        ),
-        (
-            "ChildStdin",
-            "struct",
-            Some("(use std::process::ChildStdin)"),
-            "ChildStdin",
-        ),
-        (
-            "ChildStdout",
-            "struct",
-            Some("(use std::process::ChildStdout)"),
-            "ChildStdout",
-        ),
-        (
-            "ExitStatus",
-            "struct",
-            Some("(use std::process::ExitStatus)"),
-            "ExitStatus",
-        ),
-        (
-            "ExitCode",
-            "struct",
-            Some("(use std::process::ExitCode)"),
-            "ExitCode",
-        ),
-        (
-            "Stdio",
-            "struct",
-            Some("(use std::process::Stdio)"),
-            "Stdio",
-        ),
-        (
-            "Duration",
-            "struct",
-            Some("(use std::time::Duration)"),
-            "Duration",
-        ),
-        (
-            "Instant",
-            "struct",
-            Some("(use std::time::Instant)"),
-            "Instant",
-        ),
-        (
-            "SystemTime",
-            "struct",
-            Some("(use std::time::SystemTime)"),
-            "SystemTime",
-        ),
-        ("Arc", "struct", Some("(use std::sync::Arc)"), "Arc"),
-        ("Mutex", "struct", Some("(use std::sync::Mutex)"), "Mutex"),
-        (
-            "RwLock",
-            "struct",
-            Some("(use std::sync::RwLock)"),
-            "RwLock",
-        ),
-        (
-            "MutexGuard",
-            "struct",
-            Some("(use std::sync::MutexGuard)"),
-            "MutexGuard",
-        ),
-        (
-            "RwLockReadGuard",
-            "struct",
-            Some("(use std::sync::RwLockReadGuard)"),
-            "RwLockReadGuard",
-        ),
-        (
-            "RwLockWriteGuard",
-            "struct",
-            Some("(use std::sync::RwLockWriteGuard)"),
-            "RwLockWriteGuard",
-        ),
-        (
-            "Barrier",
-            "struct",
-            Some("(use std::sync::Barrier)"),
-            "Barrier",
-        ),
-        (
-            "Condvar",
-            "struct",
-            Some("(use std::sync::Condvar)"),
-            "Condvar",
-        ),
-        ("Once", "struct", Some("(use std::sync::Once)"), "Once"),
-        (
-            "OnceLock",
-            "struct",
-            Some("(use std::sync::OnceLock)"),
-            "OnceLock",
-        ),
-        ("Weak", "struct", Some("(use std::sync::Weak)"), "Weak"),
-        (
-            "AtomicBool",
-            "struct",
-            Some("(use std::sync::atomic::AtomicBool)"),
-            "AtomicBool",
-        ),
-        (
-            "AtomicUsize",
-            "struct",
-            Some("(use std::sync::atomic::AtomicUsize)"),
-            "AtomicUsize",
-        ),
-        (
-            "AtomicI64",
-            "struct",
-            Some("(use std::sync::atomic::AtomicI64)"),
-            "AtomicI64",
-        ),
-        (
-            "AtomicI32",
-            "struct",
-            Some("(use std::sync::atomic::AtomicI32)"),
-            "AtomicI32",
-        ),
-        (
-            "AtomicU64",
-            "struct",
-            Some("(use std::sync::atomic::AtomicU64)"),
-            "AtomicU64",
-        ),
-        (
-            "AtomicU32",
-            "struct",
-            Some("(use std::sync::atomic::AtomicU32)"),
-            "AtomicU32",
-        ),
-        (
-            "AtomicPtr",
-            "struct",
-            Some("(use std::sync::atomic::AtomicPtr)"),
-            "AtomicPtr",
-        ),
-        (
-            "Ordering",
-            "enum",
-            Some("(use std::sync::atomic::Ordering)"),
-            "Ordering",
-        ),
-        ("Cell", "struct", Some("(use std::cell::Cell)"), "Cell"),
-        (
-            "RefCell",
-            "struct",
-            Some("(use std::cell::RefCell)"),
-            "RefCell",
-        ),
-        ("Rc", "struct", Some("(use std::rc::Rc)"), "Rc"),
-        ("OsStr", "struct", Some("(use std::ffi::OsStr)"), "OsStr"),
-        (
-            "OsString",
-            "struct",
-            Some("(use std::ffi::OsString)"),
-            "OsString",
-        ),
-        (
-            "CString",
-            "struct",
-            Some("(use std::ffi::CString)"),
-            "CString",
-        ),
-        ("CStr", "struct", Some("(use std::ffi::CStr)"), "CStr"),
-        (
-            "Display",
-            "interface",
-            Some("(use std::fmt::Display)"),
-            "Display",
-        ),
-        ("Debug", "interface", Some("(use std::fmt::Debug)"), "Debug"),
-        (
-            "Formatter",
-            "struct",
-            Some("(use std::fmt::Formatter)"),
-            "Formatter",
-        ),
-        ("thread", "module", Some("(use std::thread)"), "thread"),
-        (
-            "spawn",
-            "function",
-            Some("(use std::thread::spawn)"),
-            "spawn",
-        ),
-        (
-            "JoinHandle",
-            "struct",
-            Some("(use std::thread::JoinHandle)"),
-            "JoinHandle",
-        ),
-        (
-            "Error",
-            "interface",
-            Some("(use std::error::Error)"),
-            "Error",
-        ),
-        (
-            "TcpStream",
-            "struct",
-            Some("(use std::net::TcpStream)"),
-            "TcpStream",
-        ),
-        (
-            "TcpListener",
-            "struct",
-            Some("(use std::net::TcpListener)"),
-            "TcpListener",
-        ),
-        (
-            "UdpSocket",
-            "struct",
-            Some("(use std::net::UdpSocket)"),
-            "UdpSocket",
-        ),
-        (
-            "SocketAddr",
-            "struct",
-            Some("(use std::net::SocketAddr)"),
-            "SocketAddr",
-        ),
-        ("IpAddr", "enum", Some("(use std::net::IpAddr)"), "IpAddr"),
-        ("Pin", "struct", Some("(use std::pin::Pin)"), "Pin"),
-        (
-            "Future",
-            "interface",
-            Some("(use std::future::Future)"),
-            "Future",
-        ),
-        // Built-in types and macros
-        ("String", "struct", None, "String"),
-        ("str", "type", None, "str"),
-        ("std", "module", None, "std"),
-        ("Some", "enum_member", None, "Some"),
-        ("None", "enum_member", None, "None"),
-        ("Ok", "enum_member", None, "Ok"),
-        ("Err", "enum_member", None, "Err"),
-        ("Vec", "struct", None, "Vec"),
-        ("Option", "enum", None, "Option"),
-        ("Result", "enum", None, "Result"),
-        ("Box", "struct", None, "Box"),
-        ("ToString", "interface", None, "ToString"),
-        ("println!(...)", "function", None, "println!"),
-        ("eprintln!(...)", "function", None, "eprintln!"),
-        ("format!(...)", "function", None, "format!"),
-        ("panic!(...)", "function", None, "panic!"),
-        ("vec![...]", "function", None, "vec!"),
-        ("todo!(...)", "function", None, "todo!"),
-        ("unimplemented!(...)", "function", None, "unimplemented!"),
-        ("unreachable!(...)", "function", None, "unreachable!"),
-        ("matches!(...)", "function", None, "matches!"),
-        ("stringify!(...)", "function", None, "stringify!"),
-        (
-            "StringPattern(...)",
-            "enum_member",
-            Some("(use std::str::pattern::Utf8Pattern::StringPattern)"),
-            "StringPattern",
-        ),
-        (
-            "ByteString",
-            "struct",
-            Some("(alias BString) (use std::bstr::ByteString)"),
-            "ByteString",
-        ),
-        (
-            "OsStringExt",
-            "interface",
-            Some("(use std::os::unix::ffi::OsStringExt)"),
-            "OsStringExt",
-        ),
-        (
-            "IntoStringError",
-            "struct",
-            Some("(use std::ffi::IntoStringError)"),
-            "IntoStringError",
-        ),
-        (
-            "StartOfHeading",
-            "enum_member",
-            Some("(use std::ascii::Char::StartOfHeading)"),
-            "StartOfHeading",
-        ),
-        (
-            "SplitTerminator",
-            "struct",
-            Some("(use std::str::SplitTerminator)"),
-            "SplitTerminator",
-        ),
-    ];
-
-    let mut scored_results: Vec<(u32, CompletionItem)> = Vec::new();
-
-    for (label, kind, detail, insert) in standard_items {
-        if let Some(score) = fuzzy_match_score(prefix, label) {
-            scored_results.push((
-                score,
-                CompletionItem {
-                    label: label.to_string(),
-                    detail: detail.map(String::from),
-                    kind_name: kind.to_string(),
-                    insert_text: Some(insert.to_string()),
-                    additional_text_edits: Vec::new(),
-                },
-            ));
+    let mut items = rust_symbols::get_standard_rust_symbol_completions(prefix);
+    let extra = rust_symbols::discover_cargo_and_workspace_completions(prefix);
+    for it in extra {
+        if !items.iter().any(|existing| existing.label == it.label) {
+            items.push(it);
         }
     }
-
-    scored_results.sort_by_key(|a| std::cmp::Reverse(a.0));
-    scored_results.into_iter().map(|(_, item)| item).collect()
+    items
 }
 
 /// Curated list of standard TOML completion items (tables, properties, booleans, themes, cursor shapes)

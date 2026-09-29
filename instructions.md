@@ -309,6 +309,13 @@ hidden = false
 - **Configurable `insert-final-newline`**: Added `insert-final-newline` under `[editor]` configuration to ensure trailing newline on buffer save when enabled.
 - **Auto-Import Scoping & ExitCode**: Added `ExitCode` (`std::process::ExitCode`) to standard Rust completions, and suppressed redundant `+use` detail when items are already imported in the buffer.
 
+### Phase 21 — Universal Auto-Import System for Every Module, Function, Crate & Workspace File (<Tab><Enter>)
+- **Universal Rust Symbol Database & Auto-Import Engine**: Implemented `src/lsp/rust_symbols.rs` containing a comprehensive catalog of standard Rust modules (`io`, `fs`, `process`, `sync`, `atomic`, `mpsc`, `env`, `thread`, `path`, `collections`, `net`, `time`), functions (`spawn`, `sleep`, `current_dir`, `read_to_string`, `create_dir`, `exit`, `abort`, `drop`, `size_of`, etc.), and types/traits/macros.
+- **Dynamic Crate & Workspace Discovery**: Scans `Cargo.toml` dependencies (`ratatui`, `crossterm`, `serde`, etc.) and `src/*.rs` workspace files to dynamically offer crate-level and `crate::<module>` auto-import completions.
+- **Single `<Tab><Enter>` Import Workflow**: Selecting any module, function, struct, or dependency item with `<Tab><Enter>` immediately inserts the item and automatically generates the corresponding `use ...;` statement at the top of the file without requiring manual imports.
+- **Path-Qualified & Method Call Protection**: Prevents unwanted auto-import insertions when completing path-qualified symbols (`::`) or method invocations (`.`).
+- **Rust-Analyzer JSON-RPC Server Request Handling**: Added non-blocking request routing for server requests (`workspace/configuration`, `client/registerCapability`) and stripped `additionalTextEdits` from client `resolveSupport` to ensure `rust-analyzer` sends import edits directly in completion results.
+
 ---
 
 ## Testing
@@ -317,6 +324,6 @@ hidden = false
 cargo test
 ```
 
-74 integration tests covering all features and regressions.
+76 integration tests covering all features and regressions.
 
 

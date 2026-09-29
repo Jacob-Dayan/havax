@@ -338,7 +338,8 @@ Automatically catches `Ctrl+Backspace` on Windows and `Alt+Backspace` / `Ctrl+W`
 ```bash
 cargo test
 ```
-All 37 unit tests verify:
+All 76 integration and unit tests verify:
+* Universal auto-import system for standard modules, functions, types, traits, cargo dependencies, and workspace modules via `<Tab><Enter>`.
 * `cb` (clipboard-yank with OSC 52 sync), `y` (yank), `p` (paste-in-newline), and `P` (paste-here) in Normal and Visual modes.
 * Helix custom theme inheritance (`inherits = "..."`) and color overrides (`"ui.background" = { bg = "#282C34" }`).
 * `-a` / `--all` directory file collection prioritizing `main.*` (`main.rs`, `main.go`, `main.py`, etc.).
@@ -356,6 +357,5 @@ All 37 unit tests verify:
 
 This project is licensed under the **Mozilla Public License Version 2.0 (MPL-2.0)**. See the [LICENSE](file:///wsl.localhost/Ubuntu/home/shahar/codes/rust/havax/LICENSE) file for the full license text.
 
-> *Note*: I have no shit to make a full damm editor so I use antigravity to vibecode this app.
 
-
+> *Note*: I have no shit to make a full damm editor so I use antigravity to vibecode this entire program.

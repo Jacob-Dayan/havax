@@ -592,7 +592,8 @@ impl Editor {
                 .to_string();
             let trigger_col = self.completion.trigger_col;
             let auto_import_opt = if self.buf().language() == "rust" {
-                crate::lsp::get_auto_import_for_item(&insert_text, item.detail.as_deref())
+                crate::lsp::get_auto_import_for_item(&item.label, item.detail.as_deref())
+                    .or_else(|| crate::lsp::get_auto_import_for_item(&insert_text, item.detail.as_deref()))
             } else {
                 None
             };
@@ -605,6 +606,13 @@ impl Editor {
                 let chars: Vec<char> = line_str.chars().collect();
                 let cur_col = buf.cursor.col.min(chars.len());
                 let start_col = trigger_col.min(cur_col);
+                let is_scoped_or_dot = (start_col >= 1 && chars[start_col - 1] == '.')
+                    || (start_col >= 2 && chars[start_col - 1] == ':' && chars[start_col - 2] == ':');
+                let auto_import_opt = if is_scoped_or_dot {
+                    None
+                } else {
+                    auto_import_opt
+                };
 
                 let prefix_before: String = chars[..start_col].iter().collect();
                 let suffix_after: String = chars[cur_col..].iter().collect();
