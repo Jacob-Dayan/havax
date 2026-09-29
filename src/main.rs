@@ -159,7 +159,13 @@ fn main() -> ExitCode {
     }
 
     match run(paths, open_dir, config, config_path) {
-        Ok(()) => ExitCode::SUCCESS,
+        Ok(()) => {
+            let _ = crossterm::execute!(
+                std::io::stdout(),
+                crossterm::cursor::SetCursorStyle::DefaultUserShape
+            );
+            ExitCode::SUCCESS
+        }
         Err(e) => {
             eprintln!("Unexpected Error: {e}");
             ExitCode::FAILURE

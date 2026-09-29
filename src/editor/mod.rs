@@ -243,10 +243,7 @@ impl Editor {
             let _ = fs::create_dir_all(parent);
         }
         let mut content = buf.lines.join("\n");
-        if insert_final_newline
-            && !content.is_empty()
-            && !content.ends_with('\n')
-        {
+        if insert_final_newline && !content.is_empty() && !content.ends_with('\n') {
             content.push('\n');
         }
         fs::write(&buf.path, content)?;
@@ -477,12 +474,8 @@ impl Editor {
 
         let tree_ref = self.buf().tree.as_ref();
         if is_rust {
-            let trait_items = crate::lsp::collect_trait_impl_completions(
-                tree_ref,
-                &lines,
-                row,
-                &filter_prefix,
-            );
+            let trait_items =
+                crate::lsp::collect_trait_impl_completions(tree_ref, &lines, row, &filter_prefix);
             for item in trait_items {
                 if !items.iter().any(|it| it.label == item.label) {
                     items.push(item);
@@ -592,8 +585,9 @@ impl Editor {
                 .to_string();
             let trigger_col = self.completion.trigger_col;
             let auto_import_opt = if self.buf().language() == "rust" {
-                crate::lsp::get_auto_import_for_item(&item.label, item.detail.as_deref())
-                    .or_else(|| crate::lsp::get_auto_import_for_item(&insert_text, item.detail.as_deref()))
+                crate::lsp::get_auto_import_for_item(&item.label, item.detail.as_deref()).or_else(
+                    || crate::lsp::get_auto_import_for_item(&insert_text, item.detail.as_deref()),
+                )
             } else {
                 None
             };
@@ -607,7 +601,9 @@ impl Editor {
                 let cur_col = buf.cursor.col.min(chars.len());
                 let start_col = trigger_col.min(cur_col);
                 let is_scoped_or_dot = (start_col >= 1 && chars[start_col - 1] == '.')
-                    || (start_col >= 2 && chars[start_col - 1] == ':' && chars[start_col - 2] == ':');
+                    || (start_col >= 2
+                        && chars[start_col - 1] == ':'
+                        && chars[start_col - 2] == ':');
                 let auto_import_opt = if is_scoped_or_dot {
                     None
                 } else {
@@ -702,73 +698,73 @@ impl Editor {
         self.notify_lsp_change();
     }
 
-pub fn apply_additional_text_edits(buf: &mut Buffer, edits: &[crate::lsp::TextEdit]) {
-    let mut sorted_edits = edits.to_vec();
-    sorted_edits.sort_by(|a, b| {
-        b.start_line
-            .cmp(&a.start_line)
-            .then_with(|| b.start_col.cmp(&a.start_col))
-    });
+    pub fn apply_additional_text_edits(buf: &mut Buffer, edits: &[crate::lsp::TextEdit]) {
+        let mut sorted_edits = edits.to_vec();
+        sorted_edits.sort_by(|a, b| {
+            b.start_line
+                .cmp(&a.start_line)
+                .then_with(|| b.start_col.cmp(&a.start_col))
+        });
 
-    for edit in sorted_edits {
-        if edit.start_line > buf.lines.len() {
-            continue;
-        }
-        let end_line = edit.end_line.min(buf.lines.len().saturating_sub(1));
-        let start_line = edit.start_line.min(end_line);
-
-        let prefix = if start_line < buf.lines.len() {
-            let line_chars: Vec<char> = buf.lines[start_line].chars().collect();
-            let safe_col = edit.start_col.min(line_chars.len());
-            line_chars[..safe_col].iter().collect::<String>()
-        } else {
-            String::new()
-        };
-
-        let suffix = if end_line < buf.lines.len() {
-            let line_chars: Vec<char> = buf.lines[end_line].chars().collect();
-            let safe_col = edit.end_col.min(line_chars.len());
-            line_chars[safe_col..].iter().collect::<String>()
-        } else {
-            String::new()
-        };
-
-        let new_lines: Vec<&str> = edit.new_text.split('\n').collect();
-        let old_line_count = end_line - start_line + 1;
-        let new_line_count = new_lines.len();
-
-        let mut replaced = Vec::new();
-        if new_lines.len() == 1 {
-            replaced.push(format!("{prefix}{}{suffix}", new_lines[0]));
-        } else {
-            replaced.push(format!("{prefix}{}", new_lines[0]));
-            for mid in &new_lines[1..new_lines.len() - 1] {
-                replaced.push((*mid).to_string());
+        for edit in sorted_edits {
+            if edit.start_line > buf.lines.len() {
+                continue;
             }
-            replaced.push(format!("{}{suffix}", new_lines.last().unwrap_or(&"")));
-        }
+            let end_line = edit.end_line.min(buf.lines.len().saturating_sub(1));
+            let start_line = edit.start_line.min(end_line);
 
-        if start_line < buf.lines.len() {
-            buf.lines.splice(start_line..=end_line, replaced);
-        } else {
-            buf.lines.extend(replaced);
-        }
-
-        if edit.start_line <= buf.cursor.row {
-            if new_line_count >= old_line_count {
-                buf.cursor.row += new_line_count - old_line_count;
-                buf.anchor.row += new_line_count - old_line_count;
+            let prefix = if start_line < buf.lines.len() {
+                let line_chars: Vec<char> = buf.lines[start_line].chars().collect();
+                let safe_col = edit.start_col.min(line_chars.len());
+                line_chars[..safe_col].iter().collect::<String>()
             } else {
-                let diff = old_line_count - new_line_count;
-                buf.cursor.row = buf.cursor.row.saturating_sub(diff);
-                buf.anchor.row = buf.anchor.row.saturating_sub(diff);
+                String::new()
+            };
+
+            let suffix = if end_line < buf.lines.len() {
+                let line_chars: Vec<char> = buf.lines[end_line].chars().collect();
+                let safe_col = edit.end_col.min(line_chars.len());
+                line_chars[safe_col..].iter().collect::<String>()
+            } else {
+                String::new()
+            };
+
+            let new_lines: Vec<&str> = edit.new_text.split('\n').collect();
+            let old_line_count = end_line - start_line + 1;
+            let new_line_count = new_lines.len();
+
+            let mut replaced = Vec::new();
+            if new_lines.len() == 1 {
+                replaced.push(format!("{prefix}{}{suffix}", new_lines[0]));
+            } else {
+                replaced.push(format!("{prefix}{}", new_lines[0]));
+                for mid in &new_lines[1..new_lines.len() - 1] {
+                    replaced.push((*mid).to_string());
+                }
+                replaced.push(format!("{}{suffix}", new_lines.last().unwrap_or(&"")));
+            }
+
+            if start_line < buf.lines.len() {
+                buf.lines.splice(start_line..=end_line, replaced);
+            } else {
+                buf.lines.extend(replaced);
+            }
+
+            if edit.start_line <= buf.cursor.row {
+                if new_line_count >= old_line_count {
+                    buf.cursor.row += new_line_count - old_line_count;
+                    buf.anchor.row += new_line_count - old_line_count;
+                } else {
+                    let diff = old_line_count - new_line_count;
+                    buf.cursor.row = buf.cursor.row.saturating_sub(diff);
+                    buf.anchor.row = buf.anchor.row.saturating_sub(diff);
+                }
             }
         }
+        buf.clamp_cursor();
+        buf.anchor = buf.cursor;
+        buf.needs_reparse = true;
     }
-    buf.clamp_cursor();
-    buf.anchor = buf.cursor;
-    buf.needs_reparse = true;
-}
 
     pub fn get_buffer_diagnostics(
         &self,
@@ -1082,9 +1078,7 @@ pub fn apply_additional_text_edits(buf: &mut Buffer, edits: &[crate::lsp::TextEd
             return;
         }
 
-        if is_rust
-            && let Some(lsp) = &self.lsp
-        {
+        if is_rust && let Some(lsp) = &self.lsp {
             let tx = lsp.event_tx.clone();
             let word_owned = word.to_string();
             let doc_ver = self.buf().version;
@@ -1338,7 +1332,6 @@ pub fn apply_additional_text_edits(buf: &mut Buffer, edits: &[crate::lsp::TextEd
         }
     }
 
-
     fn ingest_completion_items(&mut self, items: Vec<crate::lsp::CompletionItem>) {
         if items.is_empty() || self.mode != Mode::Insert {
             return;
@@ -1373,7 +1366,12 @@ pub fn apply_additional_text_edits(buf: &mut Buffer, edits: &[crate::lsp::TextEd
         if !matched_items.is_empty() {
             if self.completion.visible {
                 for item in matched_items {
-                    if !self.completion.items.iter().any(|it| it.label == item.label) {
+                    if !self
+                        .completion
+                        .items
+                        .iter()
+                        .any(|it| it.label == item.label)
+                    {
                         self.completion.items.push(item);
                     }
                 }
@@ -1490,6 +1488,15 @@ pub fn apply_additional_text_edits(buf: &mut Buffer, edits: &[crate::lsp::TextEd
     }
 }
 
+impl Drop for Editor {
+    fn drop(&mut self) {
+        let _ = crossterm::execute!(
+            stdout(),
+            crossterm::cursor::SetCursorStyle::DefaultUserShape
+        );
+    }
+}
+
 pub fn base64_encode(data: &[u8]) -> String {
     const B64_CHARS: &[u8; 64] =
         b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
@@ -1536,7 +1543,11 @@ pub fn expand_snippet(
                 if chars.peek() == Some(&'1') || chars.peek() == Some(&'0') {
                     chars.next();
                     if fallback_cursor.is_none() {
-                        let col_offset = if line_idx == 0 { start_col } else { base_indent.len() };
+                        let col_offset = if line_idx == 0 {
+                            start_col
+                        } else {
+                            base_indent.len()
+                        };
                         fallback_cursor = Some((line_idx, col_offset + col_in_line));
                     }
                 } else if chars.peek() == Some(&'2') || chars.peek() == Some(&'3') {
@@ -1551,7 +1562,11 @@ pub fn expand_snippet(
                         placeholder.push(ch);
                     }
                     let def_val = placeholder.split(':').nth(1).unwrap_or("");
-                    let col_offset = if line_idx == 0 { start_col } else { base_indent.len() };
+                    let col_offset = if line_idx == 0 {
+                        start_col
+                    } else {
+                        base_indent.len()
+                    };
                     let p_start = (line_idx, col_offset + col_in_line);
                     line_str.push_str(def_val);
                     col_in_line += def_val.chars().count();
@@ -1587,11 +1602,7 @@ pub fn expand_snippet(
     } else {
         let last_idx = cleaned_lines.len().saturating_sub(1);
         let last_len = cleaned_lines[last_idx].chars().count();
-        let col_offset = if last_idx == 0 {
-            start_col
-        } else {
-            0
-        };
+        let col_offset = if last_idx == 0 { start_col } else { 0 };
         let pos = (last_idx, col_offset + last_len);
         (pos, pos)
     };
@@ -1606,7 +1617,8 @@ fn get_source_search_roots() -> Vec<PathBuf> {
         let home_path = PathBuf::from(home);
         let cargo_registry = home_path.join(".cargo/registry/src");
         if cargo_registry.is_dir()
-            && let Ok(entries) = std::fs::read_dir(&cargo_registry) {
+            && let Ok(entries) = std::fs::read_dir(&cargo_registry)
+        {
             for entry in entries.flatten() {
                 let p = entry.path();
                 if p.is_dir() {
@@ -1617,7 +1629,8 @@ fn get_source_search_roots() -> Vec<PathBuf> {
 
         let rustup_toolchains = home_path.join(".rustup/toolchains");
         if rustup_toolchains.is_dir()
-            && let Ok(entries) = std::fs::read_dir(&rustup_toolchains) {
+            && let Ok(entries) = std::fs::read_dir(&rustup_toolchains)
+        {
             for entry in entries.flatten() {
                 let lib_src = entry.path().join("lib/rustlib/src/rust/library");
                 if lib_src.is_dir() {
@@ -1627,8 +1640,12 @@ fn get_source_search_roots() -> Vec<PathBuf> {
         }
     }
 
-    if let Ok(output) = std::process::Command::new("rustc").arg("--print").arg("sysroot").output()
-        && output.status.success() {
+    if let Ok(output) = std::process::Command::new("rustc")
+        .arg("--print")
+        .arg("sysroot")
+        .output()
+        && output.status.success()
+    {
         let sysroot_str = String::from_utf8_lossy(&output.stdout).trim().to_string();
         let sysroot_lib = PathBuf::from(sysroot_str).join("lib/rustlib/src/rust/library");
         if sysroot_lib.is_dir() && !roots.contains(&sysroot_lib) {
@@ -1644,7 +1661,12 @@ fn get_source_search_roots() -> Vec<PathBuf> {
     roots
 }
 
-fn search_dir_for_symbol(dir: &std::path::Path, word: &str, depth: usize, max_depth: usize) -> Option<crate::lsp::Location> {
+fn search_dir_for_symbol(
+    dir: &std::path::Path,
+    word: &str,
+    depth: usize,
+    max_depth: usize,
+) -> Option<crate::lsp::Location> {
     if depth > max_depth {
         return None;
     }
@@ -1664,8 +1686,7 @@ fn search_dir_for_symbol(dir: &std::path::Path, word: &str, depth: usize, max_de
                         || line.contains(&format!("macro_rules! {word}"))
                         || line.contains(&format!("const {word}"))
                         || line.contains(&format!("static {word}"));
-                    if matches_def
-                        && let Some(col) = line.find(word) {
+                    if matches_def && let Some(col) = line.find(word) {
                         return Some(crate::lsp::Location {
                             path,
                             line: line_idx,

@@ -70,21 +70,11 @@ pub enum LspCommand {
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum RequestKind {
-    Completion {
-        doc_version: i32,
-    },
-    Definition {
-        doc_version: i32,
-    },
-    TypeDefinition {
-        doc_version: i32,
-    },
-    Implementation {
-        doc_version: i32,
-    },
-    References {
-        doc_version: i32,
-    },
+    Completion { doc_version: i32 },
+    Definition { doc_version: i32 },
+    TypeDefinition { doc_version: i32 },
+    Implementation { doc_version: i32 },
+    References { doc_version: i32 },
     Other,
 }
 
@@ -761,7 +751,8 @@ pub fn parse_text_edits(val: &Value) -> Vec<TextEdit> {
                 && let Some(new_text) = item.get("newText").and_then(|t| t.as_str())
             {
                 let start_line = start.get("line").and_then(|l| l.as_u64()).unwrap_or(0) as usize;
-                let start_col = start.get("character").and_then(|c| c.as_u64()).unwrap_or(0) as usize;
+                let start_col =
+                    start.get("character").and_then(|c| c.as_u64()).unwrap_or(0) as usize;
                 let end_line = end.get("line").and_then(|l| l.as_u64()).unwrap_or(0) as usize;
                 let end_col = end.get("character").and_then(|c| c.as_u64()).unwrap_or(0) as usize;
                 edits.push(TextEdit {
@@ -852,7 +843,9 @@ fn handle_lsp_message(
                     "result": vec![json!({}); items_count]
                 });
                 let _ = cmd_tx.send(LspCommand::Payload(resp));
-            } else if method == "client/registerCapability" || method == "window/workDoneProgress/create" {
+            } else if method == "client/registerCapability"
+                || method == "window/workDoneProgress/create"
+            {
                 let resp = json!({
                     "jsonrpc": "2.0",
                     "id": id,
@@ -865,10 +858,7 @@ fn handle_lsp_message(
     }
 
     if let Some(id) = val.get("id").and_then(|id| id.as_u64()) {
-        let req_kind = pending_requests
-            .lock()
-            .ok()
-            .and_then(|mut m| m.remove(&id));
+        let req_kind = pending_requests.lock().ok().and_then(|mut m| m.remove(&id));
 
         if let Some(result) = val.get("result") {
             let is_completion = matches!(req_kind, Some(RequestKind::Completion { .. }))
@@ -880,7 +870,8 @@ fn handle_lsp_message(
                     Some(RequestKind::Completion { doc_version }) => doc_version,
                     _ => 0,
                 };
-                let items_val = if let Some(items) = result.get("items").and_then(|i| i.as_array()) {
+                let items_val = if let Some(items) = result.get("items").and_then(|i| i.as_array())
+                {
                     Some(items)
                 } else if result.is_array() {
                     result.as_array()
@@ -892,7 +883,8 @@ fn handle_lsp_message(
                 if let Some(items_list) = items_val {
                     for it in items_list {
                         if let Some(label) = it.get("label").and_then(|l| l.as_str()) {
-                            let mut detail = it.get("detail").and_then(|d| d.as_str()).map(String::from);
+                            let mut detail =
+                                it.get("detail").and_then(|d| d.as_str()).map(String::from);
                             let kind_num = it.get("kind").and_then(|k| k.as_u64()).unwrap_or(0);
                             let kind_name = completion_kind_to_str(kind_num).to_string();
                             let insert_text = it
@@ -909,7 +901,8 @@ fn handle_lsp_message(
                                 .map(parse_text_edits)
                                 .unwrap_or_default();
 
-                            if (detail.is_none() || !detail.as_deref().unwrap_or("").contains("(use "))
+                            if (detail.is_none()
+                                || !detail.as_deref().unwrap_or("").contains("(use "))
                                 && let Some(ld) = it.get("labelDetails")
                             {
                                 if let Some(desc) = ld.get("description").and_then(|d| d.as_str()) {
@@ -921,7 +914,8 @@ fn handle_lsp_message(
                                         };
                                         detail = Some(clean_desc);
                                     }
-                                } else if let Some(ld_det) = ld.get("detail").and_then(|d| d.as_str())
+                                } else if let Some(ld_det) =
+                                    ld.get("detail").and_then(|d| d.as_str())
                                     && ld_det.contains("(use ")
                                 {
                                     detail = Some(ld_det.trim().to_string());
@@ -1252,70 +1246,143 @@ fn collect_methods_from_custom_trait(
     }
 }
 
-fn collect_standard_trait_methods(
-    trait_name: &str,
-    methods: &mut Vec<(String, String, String)>,
-) {
+fn collect_standard_trait_methods(trait_name: &str, methods: &mut Vec<(String, String, String)>) {
     match trait_name {
         "Default" => {
-            methods.push(("default".to_string(), "()".to_string(), " -> Self".to_string()));
+            methods.push((
+                "default".to_string(),
+                "()".to_string(),
+                " -> Self".to_string(),
+            ));
         }
         "Display" => {
-            methods.push(("fmt".to_string(), "(&self, f: &mut std::fmt::Formatter<'_>)".to_string(), " -> std::fmt::Result".to_string()));
+            methods.push((
+                "fmt".to_string(),
+                "(&self, f: &mut std::fmt::Formatter<'_>)".to_string(),
+                " -> std::fmt::Result".to_string(),
+            ));
         }
         "Debug" => {
-            methods.push(("fmt".to_string(), "(&self, f: &mut std::fmt::Formatter<'_>)".to_string(), " -> std::fmt::Result".to_string()));
+            methods.push((
+                "fmt".to_string(),
+                "(&self, f: &mut std::fmt::Formatter<'_>)".to_string(),
+                " -> std::fmt::Result".to_string(),
+            ));
         }
         "Clone" => {
-            methods.push(("clone".to_string(), "(&self)".to_string(), " -> Self".to_string()));
+            methods.push((
+                "clone".to_string(),
+                "(&self)".to_string(),
+                " -> Self".to_string(),
+            ));
         }
         "Iterator" => {
-            methods.push(("next".to_string(), "(&mut self)".to_string(), " -> Option<Self::Item>".to_string()));
+            methods.push((
+                "next".to_string(),
+                "(&mut self)".to_string(),
+                " -> Option<Self::Item>".to_string(),
+            ));
         }
         "Into" => {
-            methods.push(("into".to_string(), "(self)".to_string(), " -> T".to_string()));
+            methods.push((
+                "into".to_string(),
+                "(self)".to_string(),
+                " -> T".to_string(),
+            ));
         }
         "From" => {
-            methods.push(("from".to_string(), "(value: T)".to_string(), " -> Self".to_string()));
+            methods.push((
+                "from".to_string(),
+                "(value: T)".to_string(),
+                " -> Self".to_string(),
+            ));
         }
         "AsRef" => {
-            methods.push(("as_ref".to_string(), "(&self)".to_string(), " -> &T".to_string()));
+            methods.push((
+                "as_ref".to_string(),
+                "(&self)".to_string(),
+                " -> &T".to_string(),
+            ));
         }
         "AsMut" => {
-            methods.push(("as_mut".to_string(), "(&mut self)".to_string(), " -> &mut T".to_string()));
+            methods.push((
+                "as_mut".to_string(),
+                "(&mut self)".to_string(),
+                " -> &mut T".to_string(),
+            ));
         }
         "Deref" => {
-            methods.push(("deref".to_string(), "(&self)".to_string(), " -> &Self::Target".to_string()));
+            methods.push((
+                "deref".to_string(),
+                "(&self)".to_string(),
+                " -> &Self::Target".to_string(),
+            ));
         }
         "DerefMut" => {
-            methods.push(("deref_mut".to_string(), "(&mut self)".to_string(), " -> &mut Self::Target".to_string()));
+            methods.push((
+                "deref_mut".to_string(),
+                "(&mut self)".to_string(),
+                " -> &mut Self::Target".to_string(),
+            ));
         }
         "Drop" => {
             methods.push(("drop".to_string(), "(&mut self)".to_string(), String::new()));
         }
         "PartialEq" => {
-            methods.push(("eq".to_string(), "(&self, other: &Self)".to_string(), " -> bool".to_string()));
+            methods.push((
+                "eq".to_string(),
+                "(&self, other: &Self)".to_string(),
+                " -> bool".to_string(),
+            ));
         }
         "PartialOrd" => {
-            methods.push(("partial_cmp".to_string(), "(&self, other: &Self)".to_string(), " -> Option<std::cmp::Ordering>".to_string()));
+            methods.push((
+                "partial_cmp".to_string(),
+                "(&self, other: &Self)".to_string(),
+                " -> Option<std::cmp::Ordering>".to_string(),
+            ));
         }
         "Ord" => {
-            methods.push(("cmp".to_string(), "(&self, other: &Self)".to_string(), " -> std::cmp::Ordering".to_string()));
+            methods.push((
+                "cmp".to_string(),
+                "(&self, other: &Self)".to_string(),
+                " -> std::cmp::Ordering".to_string(),
+            ));
         }
         "Hash" => {
-            methods.push(("hash".to_string(), "<H: std::hash::Hasher>(&self, state: &mut H)".to_string(), String::new()));
+            methods.push((
+                "hash".to_string(),
+                "<H: std::hash::Hasher>(&self, state: &mut H)".to_string(),
+                String::new(),
+            ));
         }
         "Future" => {
-            methods.push(("poll".to_string(), "(self: std::pin::Pin<&mut Self>, cx: &mut std::task::Context<'_>)".to_string(), " -> std::task::Poll<Self::Output>".to_string()));
+            methods.push((
+                "poll".to_string(),
+                "(self: std::pin::Pin<&mut Self>, cx: &mut std::task::Context<'_>)".to_string(),
+                " -> std::task::Poll<Self::Output>".to_string(),
+            ));
         }
         "Stream" => {
-            methods.push(("poll_next".to_string(), "(self: std::pin::Pin<&mut Self>, cx: &mut std::task::Context<'_>)".to_string(), " -> std::task::Poll<Option<Self::Item>>".to_string()));
+            methods.push((
+                "poll_next".to_string(),
+                "(self: std::pin::Pin<&mut Self>, cx: &mut std::task::Context<'_>)".to_string(),
+                " -> std::task::Poll<Option<Self::Item>>".to_string(),
+            ));
         }
         "Serialize" => {
-            methods.push(("serialize".to_string(), "<S>(&self, serializer: S)".to_string(), " -> Result<S::Ok, S::Error> where S: serde::Serializer".to_string()));
+            methods.push((
+                "serialize".to_string(),
+                "<S>(&self, serializer: S)".to_string(),
+                " -> Result<S::Ok, S::Error> where S: serde::Serializer".to_string(),
+            ));
         }
         "Deserialize" => {
-            methods.push(("deserialize".to_string(), "<'de, D>(deserializer: D)".to_string(), " -> Result<Self, D::Error> where D: serde::Deserializer<'de>".to_string()));
+            methods.push((
+                "deserialize".to_string(),
+                "<'de, D>(deserializer: D)".to_string(),
+                " -> Result<Self, D::Error> where D: serde::Deserializer<'de>".to_string(),
+            ));
         }
         _ => {}
     }
@@ -1637,7 +1704,10 @@ fn find_receiver_type(
         for i in 0..params.child_count() {
             if let Some(p) = params.child(i) {
                 let p_txt = get_node_text(p, lines);
-                let clean = p_txt.trim_start_matches('&').trim_start_matches("mut ").trim();
+                let clean = p_txt
+                    .trim_start_matches('&')
+                    .trim_start_matches("mut ")
+                    .trim();
                 if clean == var_name
                     && let Some(type_node) = p.child_by_field_name("type")
                 {
@@ -1858,7 +1928,10 @@ fn collect_ast_symbols(
                 for i in 0..params.child_count() {
                     if let Some(p) = params.child(i) {
                         let name = get_node_text(p, lines);
-                        let clean = name.trim_start_matches('&').trim_start_matches("mut ").trim();
+                        let clean = name
+                            .trim_start_matches('&')
+                            .trim_start_matches("mut ")
+                            .trim();
                         if !clean.is_empty()
                             && clean.chars().all(|c| c.is_alphanumeric() || c == '_')
                         {

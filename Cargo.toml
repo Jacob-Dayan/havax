@@ -17,6 +17,12 @@ tree-sitter = "0.25"
 tree-sitter-rust = "0.24"
 
 
+[profile.dev]
+incremental = false
+
+[profile.test]
+incremental = false
+
 [profile.release]
 lto = "fat"
 codegen-units = 1

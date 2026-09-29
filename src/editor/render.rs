@@ -1,17 +1,14 @@
 use std::error::Error;
 
-use crossterm::{
-    cursor::SetCursorStyle,
-    execute,
-};
+use crossterm::{cursor::SetCursorStyle, execute};
 
 use ratatui::{
+    Frame, Terminal,
     backend::CrosstermBackend,
     layout::{Constraint, Direction, Layout, Position, Rect},
     style::{Color as RatColor, Modifier, Style},
     text::{Line, Span, Text},
     widgets::{Block, BorderType, Borders, Clear, Paragraph},
-    Frame, Terminal,
 };
 
 use super::Editor;
@@ -19,7 +16,7 @@ use crate::config::{Bufferline, CursorShape, LineNumber};
 use crate::syntax::{highlight_line_treesitter, tokenize_preview_line};
 use crate::types::Mode;
 use crate::ui::picker::FilePicker;
-use crate::ui::theme::{to_ratatui_color, Theme};
+use crate::ui::theme::{Theme, to_ratatui_color};
 
 impl Editor {
     pub fn render(&mut self) -> Result<(), Box<dyn Error>> {
@@ -69,7 +66,8 @@ impl Editor {
             let current_buf = &mut self.buffers[self.current_buffer];
             let max_digits = current_buf.lines.len().max(1).to_string().len().max(2);
             let gutter_width = 2 + max_digits + 2;
-            let content_rows = (rows.saturating_sub(if show_tab_bar { 2 } else { 1 }) as usize).max(1);
+            let content_rows =
+                (rows.saturating_sub(if show_tab_bar { 2 } else { 1 }) as usize).max(1);
             let content_cols = (cols as usize).saturating_sub(gutter_width);
             current_buf.adjust_scroll(content_rows, content_cols);
 
@@ -114,10 +112,7 @@ impl Editor {
                     Constraint::Length(1),
                 ]
             } else {
-                vec![
-                    Constraint::Min(1),
-                    Constraint::Length(1),
-                ]
+                vec![Constraint::Min(1), Constraint::Length(1)]
             };
             let chunks = Layout::default()
                 .direction(Direction::Vertical)
@@ -148,9 +143,15 @@ impl Editor {
                     };
                     let is_active = i == current_buffer;
                     let (bg, fg) = if is_active {
-                        (to_ratatui_color(theme.badge_goto_bg), to_ratatui_color(theme.badge_text))
+                        (
+                            to_ratatui_color(theme.badge_goto_bg),
+                            to_ratatui_color(theme.badge_text),
+                        )
                     } else {
-                        (to_ratatui_color(theme.status_bg), to_ratatui_color(theme.status_fg))
+                        (
+                            to_ratatui_color(theme.status_bg),
+                            to_ratatui_color(theme.status_fg),
+                        )
                     };
                     let mod_flag = if b.modified { " [+]" } else { "" };
                     let tab_text = format!(" {}: {display_title}{mod_flag} ", i + 1);
@@ -288,9 +289,7 @@ impl Editor {
                         col += msg.chars().count();
                         spans.push(Span::styled(
                             msg,
-                            Style::default()
-                                .fg(diag_fg)
-                                .bg(to_ratatui_color(theme.bg)),
+                            Style::default().fg(diag_fg).bg(to_ratatui_color(theme.bg)),
                         ));
                     }
 
@@ -340,7 +339,8 @@ impl Editor {
 
                 let cmd_prompt = format!(" :{}", command_buffer);
                 let badge_width = 5;
-                let rem_width = (status_area.width as usize).saturating_sub(badge_width + cmd_prompt.len());
+                let rem_width =
+                    (status_area.width as usize).saturating_sub(badge_width + cmd_prompt.len());
 
                 let status_line = Line::from(vec![
                     Span::styled(" CMD ", badge_style),
@@ -433,8 +433,8 @@ impl Editor {
                 let cur_screen_x = content_area.x
                     + gutter_width as u16
                     + cur_buf.cursor.col.saturating_sub(cur_buf.scroll_col) as u16;
-                let cur_screen_y = content_area.y
-                    + cur_buf.cursor.row.saturating_sub(cur_buf.scroll_row) as u16;
+                let cur_screen_y =
+                    content_area.y + cur_buf.cursor.row.saturating_sub(cur_buf.scroll_row) as u16;
                 frame.set_cursor_position(Position::new(cur_screen_x, cur_screen_y));
             }
 
@@ -445,8 +445,8 @@ impl Editor {
                 let trigger_screen_x = content_area.x as usize
                     + gutter_width
                     + completion.trigger_col.saturating_sub(cur_buf.scroll_col);
-                let cur_screen_y = content_area.y as usize
-                    + cur_buf.cursor.row.saturating_sub(cur_buf.scroll_row);
+                let cur_screen_y =
+                    content_area.y as usize + cur_buf.cursor.row.saturating_sub(cur_buf.scroll_row);
                 Self::render_completion_menu(
                     frame,
                     completion,
@@ -461,8 +461,8 @@ impl Editor {
                 let cur_screen_x = content_area.x as usize
                     + gutter_width
                     + cur_buf.cursor.col.saturating_sub(cur_buf.scroll_col);
-                let cur_screen_y = content_area.y as usize
-                    + cur_buf.cursor.row.saturating_sub(cur_buf.scroll_row);
+                let cur_screen_y =
+                    content_area.y as usize + cur_buf.cursor.row.saturating_sub(cur_buf.scroll_row);
                 Self::render_match_menu(frame, theme, cur_screen_x, cur_screen_y, cols, rows);
             }
 
@@ -470,8 +470,8 @@ impl Editor {
                 let cur_screen_x = content_area.x as usize
                     + gutter_width
                     + cur_buf.cursor.col.saturating_sub(cur_buf.scroll_col);
-                let cur_screen_y = content_area.y as usize
-                    + cur_buf.cursor.row.saturating_sub(cur_buf.scroll_row);
+                let cur_screen_y =
+                    content_area.y as usize + cur_buf.cursor.row.saturating_sub(cur_buf.scroll_row);
                 Self::render_goto_menu(frame, theme, cur_screen_x, cur_screen_y, cols, rows);
             }
 
@@ -480,9 +480,7 @@ impl Editor {
             }
 
             if mode == Mode::Command {
-                let query = command_prefix
-                    .as_deref()
-                    .unwrap_or(command_buffer);
+                let query = command_prefix.as_deref().unwrap_or(command_buffer);
                 if !query.contains(' ') {
                     let selected = if command_prefix.is_some() {
                         Some(command_buffer.as_str())
@@ -729,10 +727,7 @@ impl Editor {
                 Span::styled(detail_part, Style::default().fg(detail_fg).bg(bg)),
                 Span::styled(" ".repeat(space_between), Style::default().bg(bg)),
                 Span::styled(kind_str, Style::default().fg(kind_fg).bg(bg)),
-                Span::styled(
-                    scrollbar_sym,
-                    Style::default().fg(scrollbar_fg).bg(bg),
-                ),
+                Span::styled(scrollbar_sym, Style::default().fg(scrollbar_fg).bg(bg)),
             ]));
         }
 
@@ -760,8 +755,18 @@ impl Editor {
 
         let left_inner_w = left_width.saturating_sub(2);
 
-        let left_rect = Rect::new(left_x as u16, y_start as u16, left_width as u16, height as u16);
-        let right_rect = Rect::new(right_x as u16, y_start as u16, right_width as u16, height as u16);
+        let left_rect = Rect::new(
+            left_x as u16,
+            y_start as u16,
+            left_width as u16,
+            height as u16,
+        );
+        let right_rect = Rect::new(
+            right_x as u16,
+            y_start as u16,
+            right_width as u16,
+            height as u16,
+        );
 
         frame.render_widget(Clear, left_rect);
         frame.render_widget(Clear, right_rect);
@@ -775,14 +780,29 @@ impl Editor {
 
         let mut left_lines = Vec::new();
         left_lines.push(Line::from(vec![
-            Span::styled(text_part, Style::default().fg(to_ratatui_color(theme.fg)).bg(to_ratatui_color(theme.bg))),
-            Span::styled(" ".repeat(space_w), Style::default().bg(to_ratatui_color(theme.bg))),
-            Span::styled(format!("{count_str} "), Style::default().fg(to_ratatui_color(theme.status_fg)).bg(to_ratatui_color(theme.bg))),
+            Span::styled(
+                text_part,
+                Style::default()
+                    .fg(to_ratatui_color(theme.fg))
+                    .bg(to_ratatui_color(theme.bg)),
+            ),
+            Span::styled(
+                " ".repeat(space_w),
+                Style::default().bg(to_ratatui_color(theme.bg)),
+            ),
+            Span::styled(
+                format!("{count_str} "),
+                Style::default()
+                    .fg(to_ratatui_color(theme.status_fg))
+                    .bg(to_ratatui_color(theme.bg)),
+            ),
         ]));
 
         left_lines.push(Line::from(Span::styled(
             "─".repeat(left_inner_w),
-            Style::default().fg(to_ratatui_color(theme.picker_border)).bg(to_ratatui_color(theme.bg)),
+            Style::default()
+                .fg(to_ratatui_color(theme.picker_border))
+                .bg(to_ratatui_color(theme.bg)),
         )));
 
         let visible_items = height.saturating_sub(4);
@@ -804,7 +824,10 @@ impl Editor {
 
                 let file_path = &picker.filtered_files[item_idx];
                 let mut row_spans = Vec::new();
-                row_spans.push(Span::styled(prefix, Style::default().fg(prefix_fg).bg(row_bg)));
+                row_spans.push(Span::styled(
+                    prefix,
+                    Style::default().fg(prefix_fg).bg(row_bg),
+                ));
                 let mut written = prefix.len();
 
                 if let Some(slash_idx) = file_path.rfind('/') {
@@ -812,7 +835,9 @@ impl Editor {
                     let file_part = &file_path[slash_idx + 1..];
                     row_spans.push(Span::styled(
                         dir_part,
-                        Style::default().fg(to_ratatui_color(theme.function)).bg(row_bg),
+                        Style::default()
+                            .fg(to_ratatui_color(theme.function))
+                            .bg(row_bg),
                     ));
                     row_spans.push(Span::styled(
                         file_part,
@@ -882,7 +907,10 @@ impl Editor {
                 };
 
                 let mut spans = Vec::new();
-                spans.push(Span::styled(" ", Style::default().bg(to_ratatui_color(theme.bg))));
+                spans.push(Span::styled(
+                    " ",
+                    Style::default().bg(to_ratatui_color(theme.bg)),
+                ));
                 let mut cur_text = String::new();
                 let mut cur_color = None;
 
@@ -933,7 +961,8 @@ impl Editor {
         let right_paragraph = Paragraph::new(right_lines).block(right_block);
         frame.render_widget(right_paragraph, right_rect);
 
-        let cur_x = (left_x + 2 + picker.filter_text.len()).min(left_x + left_inner_w.saturating_sub(6));
+        let cur_x =
+            (left_x + 2 + picker.filter_text.len()).min(left_x + left_inner_w.saturating_sub(6));
         frame.set_cursor_position(Position::new(cur_x as u16, (y_start + 1) as u16));
     }
 

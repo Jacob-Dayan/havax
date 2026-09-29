@@ -911,39 +911,37 @@ impl Editor {
                 }
             }
 
-            Mode::Leader => {
-                match code {
-                    KeyCode::Char('f') => {
-                        self.file_picker = Some(FilePicker::with_hidden(
-                            PathBuf::from("."),
-                            self.config.editor.file_picker.hidden,
-                        ));
+            Mode::Leader => match code {
+                KeyCode::Char('f') => {
+                    self.file_picker = Some(FilePicker::with_hidden(
+                        PathBuf::from("."),
+                        self.config.editor.file_picker.hidden,
+                    ));
+                    self.mode = Mode::Normal;
+                }
+                KeyCode::Char('w') => {
+                    self.save_current()?;
+                    self.mode = Mode::Normal;
+                }
+                KeyCode::Char('q') => {
+                    if self.buf().modified {
+                        self.set_status("Unsaved changes! Use :q! to quit.", true);
                         self.mode = Mode::Normal;
-                    }
-                    KeyCode::Char('w') => {
-                        self.save_current()?;
-                        self.mode = Mode::Normal;
-                    }
-                    KeyCode::Char('q') => {
-                        if self.buf().modified {
-                            self.set_status("Unsaved changes! Use :q! to quit.", true);
-                            self.mode = Mode::Normal;
-                        } else {
-                            return Ok(false);
-                        }
-                    }
-                    KeyCode::Char('b') => {
-                        self.next_buffer();
-                        self.mode = Mode::Normal;
-                    }
-                    KeyCode::Esc => {
-                        self.mode = Mode::Normal;
-                    }
-                    _ => {
-                        self.mode = Mode::Normal;
+                    } else {
+                        return Ok(false);
                     }
                 }
-            }
+                KeyCode::Char('b') => {
+                    self.next_buffer();
+                    self.mode = Mode::Normal;
+                }
+                KeyCode::Esc => {
+                    self.mode = Mode::Normal;
+                }
+                _ => {
+                    self.mode = Mode::Normal;
+                }
+            },
 
             Mode::Insert => {
                 // If completion popup is visible, handle navigation and acceptance
@@ -1035,7 +1033,7 @@ impl Editor {
                             KeyCode::Left => {
                                 buf.move_left();
                                 buf.anchor = buf.cursor;
-                            },
+                            }
                             KeyCode::Right
                                 if modifiers.contains(KeyModifiers::CONTROL)
                                     || modifiers.contains(KeyModifiers::ALT) =>

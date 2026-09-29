@@ -3531,7 +3531,11 @@ fn test_find_std_or_crate_definition() {
 #[test]
 fn test_async_lsp_stale_response_discarded() {
     let mut buf = Buffer::new(PathBuf::from("main.rs")).unwrap();
-    buf.lines = vec!["fn main() {".to_string(), "    let x = 10;".to_string(), "}".to_string()];
+    buf.lines = vec![
+        "fn main() {".to_string(),
+        "    let x = 10;".to_string(),
+        "}".to_string(),
+    ];
     buf.version = 5;
 
     let mut editor = Editor {
@@ -3591,7 +3595,11 @@ fn test_async_lsp_stale_response_discarded() {
 #[test]
 fn test_async_lsp_matching_response_accepted() {
     let mut buf = Buffer::new(PathBuf::from("main.rs")).unwrap();
-    buf.lines = vec!["fn main() {".to_string(), "    let f".to_string(), "}".to_string()];
+    buf.lines = vec![
+        "fn main() {".to_string(),
+        "    let f".to_string(),
+        "}".to_string(),
+    ];
     buf.version = 5;
     buf.cursor = Position { row: 1, col: 9 };
 
@@ -3702,7 +3710,11 @@ fn test_treesitter_incremental_parsing() {
 #[test]
 fn test_goto_definition_async_handling() {
     let mut buf = Buffer::new(PathBuf::from("main.rs")).unwrap();
-    buf.lines = vec!["fn main() {".to_string(), "    foo();".to_string(), "}".to_string()];
+    buf.lines = vec![
+        "fn main() {".to_string(),
+        "    foo();".to_string(),
+        "}".to_string(),
+    ];
     buf.version = 3;
 
     let mut editor = Editor {
@@ -3892,7 +3904,10 @@ fn test_snippet_placeholder_visualized_and_replaced_on_typing() {
             crossterm::event::KeyModifiers::NONE,
         );
     }
-    assert_eq!(editor.buf().lines[0], "    String::from_str(\"Hello, world!\")");
+    assert_eq!(
+        editor.buf().lines[0],
+        "    String::from_str(\"Hello, world!\")"
+    );
     assert_eq!(editor.mode, Mode::Insert);
 }
 
@@ -4501,9 +4516,3 @@ fn test_autocomplete_tab_enter_key_handling() {
     assert_eq!(editor.buf().lines[2], "    current_dir");
     assert!(!editor.completion.visible);
 }
-
-
-
-
-
-

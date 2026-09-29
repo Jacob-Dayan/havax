@@ -864,13 +864,9 @@ impl Buffer {
                 '"' => Some('"'),
                 '`' => Some('`'),
                 '\'' => {
-                    let prev_is_ident = col > 0
-                        && (chars[col - 1].is_alphanumeric() || chars[col - 1] == '_');
-                    if prev_is_ident {
-                        None
-                    } else {
-                        Some('\'')
-                    }
+                    let prev_is_ident =
+                        col > 0 && (chars[col - 1].is_alphanumeric() || chars[col - 1] == '_');
+                    if prev_is_ident { None } else { Some('\'') }
                 }
                 _ => None,
             };
