@@ -26,10 +26,13 @@ impl Buffer {
 
         self.cached_text = Some(self.lines.join("\n"));
         let full_text = self.cached_text.as_deref().unwrap_or("");
-        let lang = crate::grammar::load_language(&lang_name);
-        let mut parser = tree_sitter::Parser::new();
-        if parser.set_language(&lang).is_ok() {
-            self.tree = parser.parse(full_text, None);
+        if let Some(lang) = crate::grammar::try_load_language(&lang_name) {
+            let mut parser = tree_sitter::Parser::new();
+            if parser.set_language(&lang).is_ok() {
+                self.tree = parser.parse(full_text, None);
+            } else {
+                self.tree = None;
+            }
         } else {
             self.tree = None;
         }
@@ -57,10 +60,13 @@ impl Buffer {
 
         self.cached_text = Some(self.lines.join("\n"));
         let full_text = self.cached_text.as_deref().unwrap_or("");
-        let lang = crate::grammar::load_language(lang_name);
-        let mut parser = tree_sitter::Parser::new();
-        if parser.set_language(&lang).is_ok() {
-            self.tree = parser.parse(full_text, self.tree.as_ref());
+        if let Some(lang) = crate::grammar::try_load_language(lang_name) {
+            let mut parser = tree_sitter::Parser::new();
+            if parser.set_language(&lang).is_ok() {
+                self.tree = parser.parse(full_text, self.tree.as_ref());
+            } else {
+                self.tree = None;
+            }
         } else {
             self.tree = None;
         }

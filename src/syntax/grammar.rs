@@ -171,13 +171,12 @@ pub fn ensure_grammars_installed() {
     }
 }
 
-/// loads tree-sitter language parser from compiled dynamic library with fallback to static grammar
-pub fn load_language(name: &str) -> tree_sitter::Language {
+/// attempts to load tree-sitter language parser from compiled dynamic library returning none if unavailable
+pub fn try_load_language(name: &str) -> Option<tree_sitter::Language> {
     let ext = dylib_extension();
     let lib_path = grammars_dir().join(format!("{name}.{ext}"));
 
     if lib_path.exists() {
-        // Try dynamically loading the compiled grammar shared library
         let symbol_name = format!("tree_sitter_{name}");
         unsafe {
             if let Ok(lib) = libloading::Library::new(&lib_path)
@@ -185,16 +184,19 @@ pub fn load_language(name: &str) -> tree_sitter::Language {
                     lib.get::<unsafe extern "C" fn() -> *const ()>(symbol_name.as_bytes())
             {
                 let ptr = func();
-                // Leak library handle so loaded code remains mapped
                 std::mem::forget(lib);
-                return tree_sitter::Language::from_raw(ptr as *const _);
+                return Some(tree_sitter::Language::from_raw(ptr as *const _));
             }
         }
     }
 
-    // Fallback to embedded static Language
     match name {
-        "rust" => tree_sitter_rust::LANGUAGE.into(),
-        _ => tree_sitter_rust::LANGUAGE.into(),
+        "rust" => Some(tree_sitter_rust::LANGUAGE.into()),
+        _ => None,
     }
+}
+
+/// loads tree-sitter language parser from compiled dynamic library with fallback to static grammar
+pub fn load_language(name: &str) -> tree_sitter::Language {
+    try_load_language(name).unwrap_or_else(|| tree_sitter_rust::LANGUAGE.into())
 }
