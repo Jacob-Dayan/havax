@@ -1800,3 +1800,93 @@ fn test_autocomplete_tab_enter_key_handling() {
     assert_eq!(editor.buf().lines[2], "    current_dir");
     assert!(!editor.completion.visible);
 }
+
+#[test]
+fn test_autocomplete_fn_return_type_adds_arrow() {
+    let mut buf = Buffer::new(PathBuf::from("src/main.rs")).unwrap();
+    buf.lines = vec!["fn returns_bool() boo".to_string()];
+    buf.cursor = Position { row: 0, col: 21 };
+
+    let mut editor = Editor {
+        buffers: vec![buf],
+        current_buffer: 0,
+        mode: Mode::Insert,
+        goto_return_mode: Mode::Normal,
+        match_return_mode: Mode::Normal,
+        match_state: MatchState::Menu,
+        clipboard: String::new(),
+        command_buffer: String::new(),
+        command_prefix: None,
+        command_completion_idx: 0,
+        status_message: None,
+        file_picker: None,
+        stdout: std::io::stdout(),
+        config: Config::default(),
+        config_path: None,
+        theme: Theme::default(),
+        lsp: None,
+        toml_lsp: None,
+        completion: havax::completion::CompletionMenu::new(),
+        lsp_doc_version: 1,
+        prev_buffer_idx: 0,
+        active_completion_req: 0,
+        pending_c: false,
+        pending_r: false,
+        diagnostics: std::collections::HashMap::new(),
+        active_completion_version: 1,
+        pending_definition_req: None,
+        pending_lsp_change: None,
+    };
+
+    editor.trigger_completion();
+    assert!(editor.completion.visible);
+
+    let bool_idx = editor
+        .completion
+        .items
+        .iter()
+        .position(|it| it.label == "bool")
+        .expect("bool completion item");
+    editor.completion.selected_idx = bool_idx;
+
+    editor.accept_completion();
+    assert_eq!(editor.buf().lines[0], "fn returns_bool() -> bool");
+    assert_eq!(editor.buf().cursor, Position { row: 0, col: 25 });
+
+    // Test with pre-existing arrow does not duplicate
+    let mut buf2 = Buffer::new(PathBuf::from("src/main.rs")).unwrap();
+    buf2.lines = vec!["fn returns_bool() -> boo".to_string()];
+    buf2.cursor = Position { row: 0, col: 24 };
+    editor.buffers = vec![buf2];
+
+    editor.trigger_completion();
+    assert!(editor.completion.visible);
+    let bool_idx2 = editor
+        .completion
+        .items
+        .iter()
+        .position(|it| it.label == "bool")
+        .expect("bool completion item");
+    editor.completion.selected_idx = bool_idx2;
+    editor.accept_completion();
+    assert_eq!(editor.buf().lines[0], "fn returns_bool() -> bool");
+    assert_eq!(editor.buf().cursor, Position { row: 0, col: 25 });
+
+    // Test inside parameter list does not add arrow
+    let mut buf3 = Buffer::new(PathBuf::from("src/main.rs")).unwrap();
+    buf3.lines = vec!["fn check(boo".to_string()];
+    buf3.cursor = Position { row: 0, col: 12 };
+    editor.buffers = vec![buf3];
+
+    editor.trigger_completion();
+    assert!(editor.completion.visible);
+    let bool_idx3 = editor
+        .completion
+        .items
+        .iter()
+        .position(|it| it.label == "bool")
+        .expect("bool completion item");
+    editor.completion.selected_idx = bool_idx3;
+    editor.accept_completion();
+    assert_eq!(editor.buf().lines[0], "fn check(bool");
+}

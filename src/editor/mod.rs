@@ -662,7 +662,7 @@ impl Editor {
                 let line_str = buf.lines[row].clone();
                 let chars: Vec<char> = line_str.chars().collect();
                 let cur_col = buf.cursor.col.min(chars.len());
-                let start_col = trigger_col.min(cur_col);
+                let mut start_col = trigger_col.min(cur_col);
                 let is_scoped_or_dot = (start_col >= 1 && chars[start_col - 1] == '.')
                     || (start_col >= 2
                         && chars[start_col - 1] == ':'
@@ -673,8 +673,22 @@ impl Editor {
                     auto_import_opt
                 };
 
-                let prefix_before: String = chars[..start_col].iter().collect();
+                let mut prefix_before: String = chars[..start_col].iter().collect();
                 let suffix_after: String = chars[cur_col..].iter().collect();
+
+                let is_rust = buf.language() == "rust";
+                if is_rust
+                    && is_fn_return_type_position(&buf.lines, row, &prefix_before, &insert_text)
+                    && let Some((paren_row, _)) =
+                        find_fn_closing_paren(&buf.lines, row, &prefix_before)
+                {
+                    if paren_row == row {
+                        prefix_before = format!("{} -> ", prefix_before.trim_end());
+                    } else {
+                        prefix_before = format!("{}-> ", prefix_before);
+                    }
+                    start_col = prefix_before.chars().count();
+                }
 
                 let indent_len = prefix_before.len() - prefix_before.trim_start().len();
                 let base_indent = " ".repeat(indent_len);
@@ -1854,4 +1868,136 @@ pub fn find_std_or_crate_definition(word: &str) -> Option<crate::lsp::Location> 
         }
     }
     None
+}
+
+/// locates closing parenthesis of function parameter list on current or preceding line
+pub fn find_fn_closing_paren(
+    lines: &[String],
+    row: usize,
+    prefix_before: &str,
+) -> Option<(usize, usize)> {
+    let trimmed_prefix = prefix_before.trim_end();
+    if trimmed_prefix.ends_with(')') {
+        let col = trimmed_prefix.rfind(')')?;
+        Some((row, col))
+    } else if trimmed_prefix.is_empty() && row > 0 {
+        let mut prev_row = row - 1;
+        loop {
+            let prev_line = lines[prev_row].trim_end();
+            if !prev_line.is_empty() {
+                if prev_line.ends_with(')') {
+                    let col = prev_line.rfind(')')?;
+                    return Some((prev_row, col));
+                }
+                break;
+            }
+            if prev_row == 0 {
+                break;
+            }
+            prev_row -= 1;
+        }
+        None
+    } else {
+        None
+    }
+}
+
+/// checks if cursor is positioned in function return type position lacking arrow
+pub fn is_fn_return_type_position(
+    lines: &[String],
+    row: usize,
+    prefix_before: &str,
+    insert_text: &str,
+) -> bool {
+    let trimmed_insert = insert_text.trim();
+    if trimmed_insert == "where"
+        || trimmed_insert.starts_with('{')
+        || trimmed_insert.starts_with(';')
+        || trimmed_insert.is_empty()
+    {
+        return false;
+    }
+
+    let trimmed_prefix = prefix_before.trim_end();
+    if trimmed_prefix.ends_with("->") {
+        return false;
+    }
+
+    let (paren_row, paren_col) = match find_fn_closing_paren(lines, row, prefix_before) {
+        Some(loc) => loc,
+        None => return false,
+    };
+
+    if paren_row == row {
+        let after_paren = &prefix_before[paren_col + 1..];
+        if after_paren.contains("->") {
+            return false;
+        }
+    }
+
+    let mut depth = 0;
+    let mut match_open = None;
+
+    'outer: for r in (0..=paren_row).rev() {
+        let line_chars: Vec<char> = lines[r].chars().collect();
+        let start_c = if r == paren_row {
+            paren_col
+        } else if line_chars.is_empty() {
+            continue;
+        } else {
+            line_chars.len() - 1
+        };
+
+        for c in (0..=start_c).rev() {
+            let ch = line_chars[c];
+            if ch == ')' {
+                depth += 1;
+            } else if ch == '(' {
+                depth -= 1;
+                if depth == 0 {
+                    match_open = Some((r, c));
+                    break 'outer;
+                }
+            }
+        }
+    }
+
+    let (open_row, open_col) = match match_open {
+        Some(loc) => loc,
+        None => return false,
+    };
+
+    let mut before_text = String::new();
+    if open_row > 0 {
+        let prev = lines[open_row - 1].trim();
+        before_text.push_str(prev);
+        before_text.push(' ');
+    }
+    let open_line_chars: Vec<char> = lines[open_row].chars().collect();
+    let line_before: String = open_line_chars[..open_col].iter().collect();
+    before_text.push_str(&line_before);
+
+    let trimmed_before = before_text.trim_end();
+    let mut header = trimmed_before;
+    if header.ends_with('>')
+        && let Some(open_angle) = header.rfind('<')
+    {
+        header = header[..open_angle].trim_end();
+    }
+
+    let words: Vec<&str> = header.split_whitespace().collect();
+    if words.is_empty() {
+        return false;
+    }
+
+    let has_fn = words.contains(&"fn");
+    if !has_fn {
+        return false;
+    }
+
+    if words.len() >= 2 {
+        words[words.len() - 2] == "fn" || words.contains(&"fn")
+    } else {
+        words[0] == "fn"
+    }
 }

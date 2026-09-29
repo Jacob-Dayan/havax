@@ -2035,6 +2035,29 @@ pub fn get_standard_rust_symbol_completions(prefix: &str) -> Vec<CompletionItem>
         }
     }
 
+    for &typ in crate::syntax::RUST_TYPES {
+        let score_opt = if prefix.is_empty() {
+            Some(100)
+        } else {
+            fuzzy_match_score(prefix, typ)
+        };
+
+        if let Some(score) = score_opt
+            && !scored_results.iter().any(|(_, it)| it.label == typ)
+        {
+            scored_results.push((
+                score,
+                CompletionItem {
+                    label: typ.to_string(),
+                    detail: Some("primitive type".to_string()),
+                    kind_name: "type".to_string(),
+                    insert_text: Some(typ.to_string()),
+                    additional_text_edits: Vec::new(),
+                },
+            ));
+        }
+    }
+
     scored_results.sort_by_key(|a| std::cmp::Reverse(a.0));
     scored_results.into_iter().map(|(_, item)| item).collect()
 }
