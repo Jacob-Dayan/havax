@@ -1,3 +1,7 @@
+//! keyboard input dispatching and modal command mapping
+//!
+//! interprets crossterm key events across normal, insert, select, goto, and match modes
+
 use std::error::Error;
 use std::path::PathBuf;
 
@@ -9,6 +13,7 @@ use crate::theme::TAB_SIZE;
 use crate::types::{Mode, Position};
 use crate::ui::picker::FilePicker;
 
+/// determines whether a key event represents a word backward deletion shortcut across terminals
 pub fn is_delete_word_backward(code: KeyCode, modifiers: KeyModifiers) -> bool {
     if modifiers.contains(KeyModifiers::CONTROL) {
         matches!(
@@ -32,6 +37,13 @@ pub fn is_delete_word_backward(code: KeyCode, modifiers: KeyModifiers) -> bool {
 }
 
 impl Editor {
+    /// processes keyboard input according to current editor mode and active overlays
+    ///
+    /// returns Ok(true) if the input loop should terminate and exit the editor
+    ///
+    /// # Errors
+    ///
+    /// returns an error if querying terminal size or executing commands fails
     pub fn handle_key(
         &mut self,
         code: KeyCode,

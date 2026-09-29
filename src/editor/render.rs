@@ -1,3 +1,8 @@
+//! terminal ui rendering and ratatui layout pipeline
+//!
+//! renders tab bar, line numbers, tree-sitter highlighted buffer content, statusline,
+//! completion menus, and picker overlays
+
 use std::error::Error;
 
 use crossterm::{cursor::SetCursorStyle, execute};
@@ -19,6 +24,11 @@ use crate::ui::picker::FilePicker;
 use crate::ui::theme::{Theme, to_ratatui_color};
 
 impl Editor {
+    /// draws current editor state to standard output terminal using configured cursor shapes
+    ///
+    /// # Errors
+    ///
+    /// returns an error if ratatui terminal initialization or frame drawing fails
     pub fn render(&mut self) -> Result<(), Box<dyn Error>> {
         let shape = match self.mode {
             Mode::Insert => self.config.editor.cursor_shape.insert,
@@ -47,6 +57,11 @@ impl Editor {
         res
     }
 
+    /// renders complete ui layout into provided ratatui terminal backend
+    ///
+    /// # Errors
+    ///
+    /// returns an error if terminal backend frame drawing encounters an io failure
     pub fn render_to_terminal<B: ratatui::backend::Backend>(
         &mut self,
         terminal: &mut Terminal<B>,

@@ -1,9 +1,26 @@
+//! text buffer storage and editing operations
+//!
+//! maintains line contents, cursor tracking, undo/redo stacks, and incremental tree-sitter integration
+
 use std::{error::Error, fs, path::PathBuf};
 
 use crate::syntax::char_type;
 use crate::theme::TAB_SIZE;
 use crate::types::Position;
 
+/// text buffer representing an open file or in-memory scratch space
+///
+/// tracks line buffers, cursor position, selection anchor, undo/redo history, and tree-sitter syntax trees
+///
+/// # Examples
+///
+/// ```
+/// use havax::Buffer;
+/// use std::path::PathBuf;
+///
+/// let buf = Buffer::new(PathBuf::from("scratch")).unwrap();
+/// assert_eq!(buf.lines.len(), 1);
+/// ```
 pub struct Buffer {
     pub path: PathBuf,
     pub lines: Vec<String>,
@@ -23,6 +40,19 @@ pub struct Buffer {
     pub last_parsed_hash: Option<u64>,
 }
 
+/// resolves opening and closing delimiter characters for surrounding pairs
+///
+/// maps paired brackets, quotes, and helix delimiter aliases like 'b' or 'B'
+///
+/// # Examples
+///
+/// ```
+/// use havax::buffer::get_matching_pair;
+///
+/// assert_eq!(get_matching_pair('('), ('(', ')'));
+/// assert_eq!(get_matching_pair('b'), ('(', ')'));
+/// assert_eq!(get_matching_pair('{'), ('{', '}'));
+/// ```
 pub fn get_matching_pair(delim: char) -> (char, char) {
     match delim {
         '(' | ')' | 'b' => ('(', ')'),
@@ -37,6 +67,21 @@ pub fn get_matching_pair(delim: char) -> (char, char) {
 }
 
 impl Buffer {
+    /// loads buffer contents from disk or initializes an empty single-line buffer if nonexistent
+    ///
+    /// # Errors
+    ///
+    /// returns an error if reading an existing file from disk fails due to i/o issues
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use havax::Buffer;
+    /// use std::path::PathBuf;
+    ///
+    /// let buf = Buffer::new(PathBuf::from("scratch")).unwrap();
+    /// assert_eq!(buf.lines, vec![""]);
+    /// ```
     pub fn new(path: PathBuf) -> Result<Self, Box<dyn Error>> {
         let lines = if path.exists() {
             let content = fs::read_to_string(&path)?;
@@ -72,6 +117,7 @@ impl Buffer {
         Ok(buf)
     }
 
+    /// extracts the identifier or word directly beneath the current cursor position
     pub fn get_word_at_cursor(&self) -> String {
         let row = self.cursor.row;
         if row >= self.lines.len() {
@@ -91,6 +137,7 @@ impl Buffer {
         chars[start..end].iter().collect()
     }
 
+    /// returns the detected programming language identifier based on file extension
     pub fn language(&self) -> &str {
         if let Some(lang) = &self.language {
             lang.as_str()
@@ -107,11 +154,13 @@ impl Buffer {
         }
     }
 
+    /// overrides the detected buffer language and marks the syntax tree for reparsing
     pub fn set_language(&mut self, lang: &str) {
         self.language = Some(lang.to_lowercase());
         self.reparse();
     }
 
+    /// synchronously reparses buffer contents with tree-sitter using the active language grammar
     pub fn reparse(&mut self) {
         let lang_name = self.language().to_string();
         if lang_name != "rust" && lang_name != "toml" {
@@ -152,6 +201,7 @@ impl Buffer {
         }
     }
 
+    /// performs an incremental tree-sitter parse reusing previous syntax tree nodes when possible
     pub fn reparse_incremental(&mut self) {
         let Some(lang_name) = self.language.as_deref() else {
             self.tree = None;
@@ -177,6 +227,7 @@ impl Buffer {
         }
     }
 
+    /// snapshots the current line contents onto the undo stack and clears redo state
     pub fn push_history(&mut self) {
         self.history.push(self.lines.clone());
         if self.history.len() > 100 {
@@ -185,6 +236,9 @@ impl Buffer {
         self.redo_stack.clear();
     }
 
+    /// reverts buffer contents to the previous snapshot in undo history
+    ///
+    /// returns true if an undo state was available and restored, false otherwise
     pub fn undo(&mut self) -> bool {
         if let Some(prev) = self.history.pop() {
             self.redo_stack.push(self.lines.clone());
@@ -202,6 +256,9 @@ impl Buffer {
         }
     }
 
+    /// reapplies the next snapshot from redo history
+    ///
+    /// returns true if a redo state was available and reapplied, false otherwise
     pub fn redo(&mut self) -> bool {
         if let Some(next) = self.redo_stack.pop() {
             self.history.push(self.lines.clone());
@@ -219,6 +276,7 @@ impl Buffer {
         }
     }
 
+    /// returns normalized start and end positions representing the current selection span
     pub fn selection_bounds(&self) -> (Position, Position) {
         if self.anchor <= self.cursor {
             (self.anchor, self.cursor)
@@ -227,6 +285,7 @@ impl Buffer {
         }
     }
 
+    /// checks whether a specific row and column coordinate falls within the active selection
     pub fn is_selected(&self, row: usize, col: usize) -> bool {
         if self.anchor == self.cursor {
             return false;
@@ -247,6 +306,7 @@ impl Buffer {
         }
     }
 
+    /// clamps cursor row and column indices to valid bounds within the current line collection
     pub fn clamp_cursor(&mut self) {
         if self.cursor.row >= self.lines.len() {
             self.cursor.row = self.lines.len().saturating_sub(1);
@@ -257,6 +317,7 @@ impl Buffer {
         }
     }
 
+    /// selects the entire active line or extends selection to the next line if already selected
     pub fn select_line(&mut self) {
         let cur_row = self.cursor.row;
         let line_len = self.lines[cur_row].chars().count();
@@ -282,6 +343,7 @@ impl Buffer {
         }
     }
 
+    /// copies text bounded by two positions into an owned string
     #[allow(clippy::needless_range_loop)]
     pub fn yank_range(&self, start: Position, end: Position) -> String {
         if start.row == end.row {
@@ -316,6 +378,7 @@ impl Buffer {
         }
     }
 
+    /// replaces characters within the current selection or at the cursor with the given character
     pub fn replace_char_at_cursor(&mut self, c: char) {
         if self.anchor != self.cursor {
             let (start, end) = self.selection_bounds();
@@ -364,6 +427,7 @@ impl Buffer {
         }
     }
 
+    /// deletes the active selection or character into the clipboard preparing for immediate insertion
     pub fn change_selection(&mut self, clipboard: &mut String) {
         if self.anchor == self.cursor {
             let row = self.cursor.row;
@@ -451,6 +515,7 @@ impl Buffer {
         }
     }
 
+    /// deletes the selected text or character under the cursor and stores it in the clipboard
     pub fn delete_selection(&mut self, clipboard: &mut String) {
         if self.anchor == self.cursor {
             let row = self.cursor.row;
@@ -527,6 +592,7 @@ impl Buffer {
         self.needs_reparse = true;
     }
 
+    /// pastes clipboard text before or after the current cursor location
     #[allow(clippy::needless_range_loop)]
     pub fn paste(&mut self, clipboard: &str, after: bool) {
         if clipboard.is_empty() {
@@ -588,6 +654,7 @@ impl Buffer {
         self.needs_reparse = true;
     }
 
+    /// pastes clipboard text on a newly created line below the current cursor row
     pub fn paste_newline(&mut self, clipboard: &str) {
         if clipboard.is_empty() {
             return;
@@ -606,6 +673,7 @@ impl Buffer {
         self.needs_reparse = true;
     }
 
+    /// inserts clipboard content directly at the current cursor coordinates
     #[allow(clippy::needless_range_loop)]
     pub fn paste_here(&mut self, clipboard: &str) {
         if clipboard.is_empty() {
@@ -655,6 +723,7 @@ impl Buffer {
         self.needs_reparse = true;
     }
 
+    /// toggles line comment prefixes across lines spanned by the active selection or cursor
     #[allow(clippy::needless_range_loop)]
     pub fn toggle_comment(&mut self) -> bool {
         self.push_history();
@@ -692,10 +761,12 @@ impl Buffer {
         all_commented
     }
 
+    /// advances cursor to the next word start boundary
     pub fn move_next_word_start(&mut self) {
         self.move_next_word_start_ext(false);
     }
 
+    /// advances cursor to the next word start, extending selection if specified
     pub fn move_next_word_start_ext(&mut self, extend: bool) {
         let mut row = self.cursor.row;
         let mut col = self.cursor.col;
@@ -736,10 +807,12 @@ impl Buffer {
         self.cursor = Position { row, col };
     }
 
+    /// moves cursor backward to the start of the previous word
     pub fn move_prev_word_start(&mut self) {
         self.move_prev_word_start_ext(false);
     }
 
+    /// moves cursor backward to the previous word start, extending selection if specified
     pub fn move_prev_word_start_ext(&mut self, extend: bool) {
         let mut row = self.cursor.row;
         let mut col = self.cursor.col;
@@ -778,10 +851,12 @@ impl Buffer {
         self.cursor = Position { row, col };
     }
 
+    /// moves cursor forward to the end of the current or next word
     pub fn move_next_word_end(&mut self) {
         self.move_next_word_end_ext(false);
     }
 
+    /// moves cursor forward to the word end, extending selection if specified
     pub fn move_next_word_end_ext(&mut self, extend: bool) {
         let mut row = self.cursor.row;
         let mut col = self.cursor.col;
@@ -822,10 +897,12 @@ impl Buffer {
         };
     }
 
+    /// inserts a single character at the cursor position without auto-pairing
     pub fn insert_char(&mut self, c: char) {
         self.insert_char_auto_pair(c, false);
     }
 
+    /// inserts a character with optional auto-pairing for brackets and quotes
     pub fn insert_char_auto_pair(&mut self, c: char, auto_pairs: bool) {
         if self.cursor.row >= self.lines.len() {
             self.lines.push(String::new());
@@ -891,6 +968,7 @@ impl Buffer {
         self.needs_reparse = true;
     }
 
+    /// inserts whitespace padding up to the next tab stop boundary
     pub fn insert_tab(&mut self) {
         if self.cursor.row >= self.lines.len() {
             self.lines.push(String::new());
@@ -908,6 +986,7 @@ impl Buffer {
         self.needs_reparse = true;
     }
 
+    /// inserts a newline at the cursor with smart auto-indentation matching bracket scope
     pub fn insert_newline(&mut self) {
         self.push_history();
         if self.cursor.row >= self.lines.len() {
@@ -959,10 +1038,12 @@ impl Buffer {
         self.needs_reparse = true;
     }
 
+    /// deletes the character before the cursor or joins lines when at column zero
     pub fn delete_char(&mut self) {
         self.delete_char_auto_pair(false);
     }
 
+    /// deletes the character before the cursor with auto-pair cleanups
     pub fn delete_char_auto_pair(&mut self, auto_pairs: bool) {
         if self.cursor.col > 0 {
             let line = &mut self.lines[self.cursor.row];
@@ -1018,6 +1099,7 @@ impl Buffer {
         }
     }
 
+    /// deletes the word or symbol sequence immediately preceding the cursor
     pub fn delete_word_backward(&mut self) {
         self.push_history();
         if self.cursor.col == 0 {
@@ -1060,10 +1142,12 @@ impl Buffer {
         self.needs_reparse = true;
     }
 
+    /// moves cursor left by one column collapsing active selection
     pub fn move_left(&mut self) {
         self.move_cursor_left(false);
     }
 
+    /// moves cursor left by one column, extending selection when requested
     pub fn move_cursor_left(&mut self, extend: bool) {
         if self.cursor.col > 0 {
             self.cursor.col -= 1;
@@ -1073,10 +1157,12 @@ impl Buffer {
         }
     }
 
+    /// moves cursor right by one column collapsing active selection
     pub fn move_right(&mut self) {
         self.move_cursor_right(false);
     }
 
+    /// moves cursor right by one column up to line length, extending selection when requested
     pub fn move_cursor_right(&mut self, extend: bool) {
         let current_line_len = self
             .lines
@@ -1090,10 +1176,12 @@ impl Buffer {
         }
     }
 
+    /// moves cursor up by one line collapsing active selection
     pub fn move_up(&mut self) {
         self.move_cursor_up(false);
     }
 
+    /// moves cursor up by one line clamped to target line length, extending selection when requested
     pub fn move_cursor_up(&mut self, extend: bool) {
         if self.cursor.row > 0 {
             self.cursor.row -= 1;
@@ -1105,10 +1193,12 @@ impl Buffer {
         }
     }
 
+    /// moves cursor down by one line collapsing active selection
     pub fn move_down(&mut self) {
         self.move_cursor_down(false);
     }
 
+    /// moves cursor down by one line clamped to target line length, extending selection when requested
     pub fn move_cursor_down(&mut self, extend: bool) {
         if self.cursor.row + 1 < self.lines.len() {
             self.cursor.row += 1;
@@ -1120,6 +1210,7 @@ impl Buffer {
         }
     }
 
+    /// adjusts viewport scroll offsets so cursor remains visible within available window dimensions
     pub fn adjust_scroll(&mut self, content_rows: usize, content_cols: usize) {
         if content_rows == 0 || content_cols == 0 {
             return;
@@ -1137,6 +1228,7 @@ impl Buffer {
         }
     }
 
+    /// finds counterpart matching bracket or delimiter relative to specified position
     pub fn find_matching_bracket(&self, pos: Position) -> Option<Position> {
         if pos.row >= self.lines.len() {
             return None;
@@ -1248,6 +1340,7 @@ impl Buffer {
         None
     }
 
+    /// scans outward from position to locate matching opening and closing pair of delimiter
     #[allow(clippy::needless_range_loop, clippy::chunks_exact_to_as_chunks)]
     pub fn find_enclosing_brackets(
         &self,
@@ -1324,6 +1417,7 @@ impl Buffer {
         }
     }
 
+    /// encloses current selection or word under cursor with specified opening and closing delimiters
     pub fn surround_add(&mut self, open: char, close: char) {
         self.push_history();
         if self.anchor != self.cursor {
@@ -1395,6 +1489,7 @@ impl Buffer {
         self.needs_reparse = true;
     }
 
+    /// removes enclosing delimiters matching specified character, returning true if found and deleted
     pub fn surround_delete(&mut self, delim: char) -> bool {
         if let Some((open_pos, close_pos)) = self.find_enclosing_brackets(self.cursor, delim) {
             self.push_history();
@@ -1425,6 +1520,7 @@ impl Buffer {
         }
     }
 
+    /// replaces enclosing delimiters around cursor with new opening and closing characters
     pub fn surround_replace(&mut self, old_delim: char, new_open: char, new_close: char) -> bool {
         if let Some((open_pos, close_pos)) = self.find_enclosing_brackets(self.cursor, old_delim) {
             self.push_history();
@@ -1450,6 +1546,7 @@ impl Buffer {
         }
     }
 
+    /// selects enclosing delimiters and their contents, or word plus surrounding whitespace for `'w'`
     pub fn select_around(&mut self, delim: char) -> bool {
         if delim == 'w' {
             // Select around word (including surrounding whitespace)
@@ -1495,6 +1592,7 @@ impl Buffer {
         }
     }
 
+    /// selects contents strictly within enclosing delimiters, or word excluding surrounding whitespace for `'w'`
     pub fn select_inside(&mut self, delim: char) -> bool {
         if delim == 'w' {
             // Select inside word (word only without whitespace)

@@ -1,5 +1,20 @@
+//! autocomplete popup menu state and candidate selection tracking
+//!
+//! coordinates floating completion menu items, filtering prefix, and viewport scrolling
+
 use crate::lsp::CompletionItem;
 
+/// floating popup menu displaying code completion suggestions
+///
+/// # Examples
+///
+/// ```
+/// use havax::lsp::completion::CompletionMenu;
+///
+/// let mut menu = CompletionMenu::new();
+/// assert!(!menu.visible);
+/// menu.close();
+/// ```
 pub struct CompletionMenu {
     pub items: Vec<CompletionItem>,
     pub selected_idx: usize,
@@ -27,6 +42,7 @@ impl CompletionMenu {
         }
     }
 
+    /// displays completion menu populated with candidate items at trigger column
     pub fn show(&mut self, trigger_col: usize, prefix: &str, items: Vec<CompletionItem>) {
         if items.is_empty() {
             self.visible = false;
@@ -40,6 +56,7 @@ impl CompletionMenu {
         self.visible = true;
     }
 
+    /// updates active filter prefix and replaces displayed completion candidates
     pub fn update_prefix(&mut self, prefix: &str, candidates: Vec<CompletionItem>) {
         self.prefix = prefix.to_string();
         self.items = candidates;
@@ -53,6 +70,7 @@ impl CompletionMenu {
         }
     }
 
+    /// advances selected candidate forward wrapping to first item when reaching end
     pub fn select_next(&mut self, visible_count: usize) {
         if self.items.is_empty() {
             return;
@@ -69,6 +87,7 @@ impl CompletionMenu {
         }
     }
 
+    /// advances selected candidate backward wrapping to last item when reaching top
     pub fn select_prev(&mut self) {
         if self.items.is_empty() {
             return;
@@ -90,6 +109,7 @@ impl CompletionMenu {
         }
     }
 
+    /// returns reference to currently highlighted completion item if menu is visible
     pub fn selected_item(&self) -> Option<&CompletionItem> {
         if self.visible && self.selected_idx < self.items.len() {
             Some(&self.items[self.selected_idx])
@@ -98,6 +118,7 @@ impl CompletionMenu {
         }
     }
 
+    /// hides completion menu and resets selection and filter state
     pub fn close(&mut self) {
         self.visible = false;
         self.items.clear();

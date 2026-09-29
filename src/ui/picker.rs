@@ -1,8 +1,23 @@
+//! interactive fuzzy file finder and preview pane
+//!
+//! scans directory trees, filters candidate paths in real time, and renders file content previews
+
 use std::{
     fs,
     path::{Path, PathBuf},
 };
 
+/// modal file finder overlay displaying search results and split-pane file previews
+///
+/// # Examples
+///
+/// ```
+/// use std::path::PathBuf;
+/// use havax::ui::picker::FilePicker;
+///
+/// let picker = FilePicker::new(PathBuf::from("."));
+/// assert!(!picker.all_files.is_empty());
+/// ```
 pub struct FilePicker {
     pub base_dir: PathBuf,
     pub all_files: Vec<String>,
@@ -14,10 +29,12 @@ pub struct FilePicker {
 }
 
 impl FilePicker {
+    /// creates a file picker scanning directory with hidden files excluded
     pub fn new(dir: PathBuf) -> Self {
         Self::with_hidden(dir, false)
     }
 
+    /// creates a file picker scanning directory with optional hidden files inclusion
     pub fn with_hidden(dir: PathBuf, show_hidden: bool) -> Self {
         let mut all_files = Vec::new();
         collect_files(&dir, "", &mut all_files, show_hidden);
@@ -37,6 +54,7 @@ impl FilePicker {
         picker
     }
 
+    /// filters candidate files matching active query and refreshes preview
     pub fn refilter(&mut self) {
         if self.filter_text.is_empty() {
             self.filtered_files = self.all_files.clone();
@@ -54,6 +72,7 @@ impl FilePicker {
         self.update_preview();
     }
 
+    /// deletes preceding word or path segment in active filter query
     pub fn delete_word_backward(&mut self) {
         if self.filter_text.is_empty() {
             return;
@@ -86,6 +105,7 @@ impl FilePicker {
         self.refilter();
     }
 
+    /// moves file selection cursor down and updates preview lines
     pub fn select_next(&mut self, visible_count: usize) {
         if self.filtered_files.is_empty() {
             return;
@@ -99,6 +119,7 @@ impl FilePicker {
         }
     }
 
+    /// moves file selection cursor up and updates preview lines
     pub fn select_prev(&mut self) {
         if self.selected_idx > 0 {
             self.selected_idx -= 1;
@@ -109,6 +130,7 @@ impl FilePicker {
         }
     }
 
+    /// reads and caches top lines of currently selected file for preview pane
     pub fn update_preview(&mut self) {
         self.preview_lines.clear();
         if self.selected_idx >= self.filtered_files.len() {
@@ -130,6 +152,7 @@ impl FilePicker {
         }
     }
 
+    /// returns absolute path to currently highlighted candidate file
     pub fn selected_file(&self) -> Option<PathBuf> {
         if self.selected_idx < self.filtered_files.len() {
             Some(self.base_dir.join(&self.filtered_files[self.selected_idx]))

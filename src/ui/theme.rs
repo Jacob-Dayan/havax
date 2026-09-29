@@ -1,7 +1,24 @@
+//! syntax theme configurations and terminal color palette definitions
+//!
+//! includes built-in presets (one dark, catppuccin, dracula, nord, gruvbox),
+//! dynamic custom toml theme resolution, and crossterm to ratatui color mapping
+
 use crossterm::style::Color;
 
+/// default indentation visual tab size in columns
 pub const TAB_SIZE: usize = 4;
 
+/// converts a crossterm color to its equivalent ratatui color representation
+///
+/// # Examples
+///
+/// ```
+/// use crossterm::style::Color as CColor;
+/// use havax::ui::theme::to_ratatui_color;
+/// use ratatui::style::Color as RColor;
+///
+/// assert_eq!(to_ratatui_color(CColor::Reset), RColor::Reset);
+/// ```
 pub fn to_ratatui_color(color: Color) -> ratatui::style::Color {
     match color {
         Color::Reset => ratatui::style::Color::Reset,
@@ -26,6 +43,19 @@ pub fn to_ratatui_color(color: Color) -> ratatui::style::Color {
     }
 }
 
+/// visual color palette configuration for editor interface and syntax elements
+///
+/// encapsulates foreground, background, gutter, badge, and language token colors
+///
+/// # Examples
+///
+/// ```
+/// use havax::ui::theme::Theme;
+///
+/// let theme = Theme::default();
+/// let nord = Theme::from_name("nord");
+/// assert_ne!(theme.bg, nord.bg);
+/// ```
 #[derive(Clone, Copy, Debug)]
 pub struct Theme {
     pub bg: Color,
@@ -60,6 +90,7 @@ pub struct Theme {
 }
 
 impl Theme {
+    /// returns default one half dark color scheme
     pub fn one_half_dark() -> Self {
         Self {
             bg: Color::Rgb {
@@ -185,6 +216,7 @@ impl Theme {
         }
     }
 
+    /// returns catppuccin mocha pastel dark color scheme
     pub fn catppuccin_mocha() -> Self {
         Self {
             bg: Color::Rgb {
@@ -310,6 +342,7 @@ impl Theme {
         }
     }
 
+    /// returns dracula high-contrast dark color scheme
     pub fn dracula() -> Self {
         Self {
             bg: Color::Rgb {
@@ -435,6 +468,7 @@ impl Theme {
         }
     }
 
+    /// returns nord arctic-inspired bluish dark color scheme
     pub fn nord() -> Self {
         Self {
             bg: Color::Rgb {
@@ -560,7 +594,7 @@ impl Theme {
         }
     }
 
-    /// Atom One Dark — distinct from One Half Dark with warmer tones
+    /// returns atom one dark color scheme
     pub fn one_dark() -> Self {
         Self {
             bg: Color::Rgb {
@@ -686,7 +720,7 @@ impl Theme {
         }
     }
 
-    /// Gruvbox Dark
+    /// returns gruvbox warm retro dark color scheme
     pub fn gruvbox_dark() -> Self {
         Self {
             bg: Color::Rgb {
@@ -812,7 +846,7 @@ impl Theme {
         }
     }
 
-    /// One Half Light — light theme variant
+    /// returns one half light high-contrast light color scheme
     pub fn one_half_light() -> Self {
         Self {
             bg: Color::Rgb {
@@ -938,6 +972,18 @@ impl Theme {
         }
     }
 
+    /// resolves theme by name from custom toml files or built-in presets
+    ///
+    /// falls back to one half dark if name does not match any known preset or custom file
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use havax::ui::theme::Theme;
+    ///
+    /// let theme = Theme::from_name("dracula");
+    /// assert_eq!(theme.bg, Theme::dracula().bg);
+    /// ```
     pub fn from_name(name: &str) -> Self {
         if let Some(theme) = Self::load_custom_theme(name) {
             return theme;
@@ -954,6 +1000,9 @@ impl Theme {
         }
     }
 
+    /// attempts to locate and load custom helix or havax toml theme from disk
+    ///
+    /// inspects config directories in home and current working directory
     pub fn load_custom_theme(name: &str) -> Option<Self> {
         let clean_name = name.trim_end_matches(".toml");
         let mut search_dirs = Vec::new();
@@ -989,6 +1038,22 @@ impl Theme {
         None
     }
 
+    /// parses helix-compatible toml theme definition string into theme palette
+    ///
+    /// supports palette definitions, inheritance, and standard helix scope keys
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use havax::ui::theme::Theme;
+    ///
+    /// let toml = r##"
+    /// "ui.background" = { bg = "#1e1e2e" }
+    /// "ui.text" = { fg = "#cdd6f4" }
+    /// "##;
+    /// let theme = Theme::from_toml_str(toml);
+    /// assert!(theme.is_some());
+    /// ```
     pub fn from_toml_str(content: &str) -> Option<Self> {
         let table: toml::Table = toml::from_str(content).ok()?;
 
@@ -1178,103 +1243,123 @@ impl Default for Theme {
 }
 
 // Global default theme references for backward compatibility
+/// default editor background color
 pub const BG_COLOR: Color = Color::Rgb {
     r: 40,
     g: 44,
     b: 52,
 };
+/// default text foreground color
 pub const FG_COLOR: Color = Color::Rgb {
     r: 171,
     g: 178,
     b: 191,
 };
+/// default visual selection background color
 pub const SELECTION_BG: Color = Color::Rgb {
     r: 62,
     g: 68,
     b: 81,
 };
+/// default status line background color
 pub const STATUS_BG: Color = Color::Rgb {
     r: 33,
     g: 37,
     b: 43,
 };
+/// default status line text color
 pub const STATUS_FG: Color = Color::Rgb {
     r: 171,
     g: 178,
     b: 191,
 };
+/// default inactive line number gutter foreground color
 pub const GUTTER_FG: Color = Color::Rgb {
     r: 92,
     g: 99,
     b: 112,
 };
+/// default active line number gutter highlight color
 pub const CURRENT_LINE_GUTTER: Color = Color::Rgb {
     r: 220,
     g: 223,
     b: 228,
 };
 
+/// default syntax keyword highlight color
 pub const COLOR_KEYWORD: Color = Color::Rgb {
     r: 198,
     g: 120,
     b: 221,
 };
+/// default syntax type and primitive highlight color
 pub const COLOR_TYPE: Color = Color::Rgb {
     r: 229,
     g: 192,
     b: 123,
 };
+/// default syntax string literal highlight color
 pub const COLOR_STRING: Color = Color::Rgb {
     r: 152,
     g: 195,
     b: 121,
 };
+/// default syntax number literal highlight color
 pub const COLOR_NUMBER: Color = Color::Rgb {
     r: 209,
     g: 154,
     b: 102,
 };
+/// default syntax comment color
 pub const COLOR_COMMENT: Color = Color::Rgb {
     r: 92,
     g: 99,
     b: 112,
 };
+/// default doc comment color
 pub const COLOR_DOC_COMMENT: Color = Color::Rgb {
     r: 86,
     g: 182,
     b: 194,
 };
+/// default macro invocation color
 pub const COLOR_MACRO: Color = Color::Rgb {
     r: 224,
     g: 108,
     b: 117,
 };
+/// default function definition and call color
 pub const COLOR_FN: Color = Color::Rgb {
     r: 97,
     g: 175,
     b: 239,
 };
+/// default module and namespace color
 pub const COLOR_MODULE: Color = Color::Rgb {
     r: 229,
     g: 192,
     b: 123,
 };
+/// default attribute and derive macro color
 pub const COLOR_ATTR: Color = Color::Rgb {
     r: 229,
     g: 192,
     b: 123,
 };
+/// default lifetime parameter color
 pub const COLOR_LIFETIME: Color = Color::Rgb {
     r: 224,
     g: 108,
     b: 117,
 };
+/// default operator and punctuation color
 pub const COLOR_OPERATOR: Color = Color::Rgb {
     r: 86,
     g: 182,
     b: 194,
 };
 
+/// rainbow delimiter nesting colors for bracket matching
 pub const RAINBOW_COLORS: [Color; 6] = [
     Color::Rgb {
         r: 249,
@@ -1308,31 +1393,37 @@ pub const RAINBOW_COLORS: [Color; 6] = [
     }, // Green
 ];
 
+/// normal mode status badge background color
 pub const BADGE_NOR_BG: Color = Color::Rgb {
     r: 97,
     g: 175,
     b: 239,
 };
+/// insert mode status badge background color
 pub const BADGE_INS_BG: Color = Color::Rgb {
     r: 152,
     g: 195,
     b: 121,
 };
+/// command mode status badge background color
 pub const BADGE_CMD_BG: Color = Color::Rgb {
     r: 209,
     g: 154,
     b: 102,
 };
+/// goto mode status badge background color
 pub const BADGE_GOTO_BG: Color = Color::Rgb {
     r: 198,
     g: 120,
     b: 221,
 };
+/// mode status badge label text color
 pub const BADGE_TEXT: Color = Color::Rgb {
     r: 40,
     g: 44,
     b: 52,
 };
+/// file picker popup border color
 pub const PICKER_BORDER: Color = Color::Rgb {
     r: 152,
     g: 195,

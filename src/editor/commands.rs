@@ -1,3 +1,8 @@
+//! command line parsing and execution engine
+//!
+//! implements ex-style commands (`:w`, `:q`, `:fmt`, `:check`, buffer management)
+//! and external process execution
+
 use std::{
     error::Error,
     io::Write,
@@ -14,6 +19,7 @@ use crate::ui::picker::FilePicker;
 use crate::ui::theme::Theme;
 
 impl Editor {
+    /// walks up filesystem tree from current buffer path to locate nearest directory containing Cargo.toml
     pub fn find_cargo_dir(&self) -> PathBuf {
         let mut dir = self.buf().path.parent().unwrap_or(Path::new("."));
         while !dir.join("Cargo.toml").exists() {
@@ -31,6 +37,7 @@ impl Editor {
         dir.to_path_buf()
     }
 
+    /// invokes `cargo check` and reports diagnostics or success in statusline
     pub fn run_cargo_check(&mut self) {
         self.set_status("Running cargo check...", false);
         let _ = self.render();
@@ -72,12 +79,23 @@ impl Editor {
         }
     }
 
+    /// formats current buffer content through external `rustfmt` executable preserving cursor position
     pub fn run_rustfmt(&mut self) {
         self.set_status("Formatting with rustfmt...", false);
         let _ = self.render();
 
         let rustfmt_bin = find_binary("rustfmt");
-        let mut child = match Command::new(&rustfmt_bin)
+        let mut cmd = Command::new(&rustfmt_bin);
+        if let Some(edition) = crate::lsp::detect_rust_edition(Some(&self.buf().path)) {
+            cmd.args(["--edition", &edition]);
+        }
+        if let Some(parent) = self.buf().path.parent()
+            && !parent.as_os_str().is_empty()
+            && parent.exists()
+        {
+            cmd.current_dir(parent);
+        }
+        let mut child = match cmd
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
@@ -121,6 +139,11 @@ impl Editor {
         }
     }
 
+    /// leaves terminal raw mode to run an interactive cargo subcommand and waits for enter before restoring ui
+    ///
+    /// # Errors
+    ///
+    /// returns an error if terminal cleanup or initialization fails
     pub fn run_cargo_cmd(&mut self, cmd: &str) -> Result<(), Box<dyn Error>> {
         self.cleanup()?;
         println!("\x1b[1;36m==> Running cargo {cmd}...\x1b[0m\n");
@@ -136,6 +159,11 @@ impl Editor {
         Ok(())
     }
 
+    /// executes a shell command or interactive subshell in standard terminal mode before restoring editor
+    ///
+    /// # Errors
+    ///
+    /// returns an error if terminal cleanup or initialization fails
     pub fn run_shell_cmd(&mut self, cmd_opt: Option<&str>) -> Result<(), Box<dyn Error>> {
         self.cleanup()?;
         let shell = std::env::var("SHELL").unwrap_or_else(|_| "bash".to_string());
@@ -159,6 +187,11 @@ impl Editor {
         Ok(())
     }
 
+    /// parses and executes the buffered command line input returning whether editor should keep running
+    ///
+    /// # Errors
+    ///
+    /// returns an error if buffer saving or external process execution fails
     pub fn execute_command(&mut self) -> Result<bool, Box<dyn Error>> {
         let cmd = self.command_buffer.trim().to_string();
         self.command_buffer.clear();
@@ -531,27 +564,92 @@ impl Editor {
     }
 }
 
-pub fn find_binary(bin_name: &str) -> PathBuf {
-    if let Ok(path_var) = std::env::var("PATH") {
-        for dir in std::env::split_paths(&path_var) {
-            let full = dir.join(bin_name);
-            if full.exists() {
-                return full;
+static BIN_CACHE: std::sync::RwLock<Option<std::collections::HashMap<String, Option<PathBuf>>>> =
+    std::sync::RwLock::new(None);
+
+/// locates executable binary path searching user cargo/local dirs and PATH, caching result in memory
+pub fn find_binary_cached(bin_name: &str) -> Option<PathBuf> {
+    if let Ok(guard) = BIN_CACHE.read()
+        && let Some(cache) = guard.as_ref()
+        && let Some(res) = cache.get(bin_name)
+    {
+        return res.clone();
+    }
+
+    let found = resolve_binary_uncached(bin_name);
+
+    if let Ok(mut guard) = BIN_CACHE.write() {
+        let cache = guard.get_or_insert_with(std::collections::HashMap::new);
+        cache.insert(bin_name.to_string(), found.clone());
+    }
+
+    found
+}
+
+fn resolve_binary_uncached(bin_name: &str) -> Option<PathBuf> {
+    // 1. Check user cargo & local bin first (fast local fs)
+    if let Ok(home) = std::env::var("HOME").or_else(|_| std::env::var("USERPROFILE")) {
+        let cargo_bin = PathBuf::from(&home).join(".cargo/bin").join(bin_name);
+        if cargo_bin.exists() {
+            return Some(cargo_bin);
+        }
+        #[cfg(windows)]
+        {
+            let cargo_exe = PathBuf::from(&home)
+                .join(".cargo/bin")
+                .join(format!("{bin_name}.exe"));
+            if cargo_exe.exists() {
+                return Some(cargo_exe);
+            }
+        }
+
+        let local_bin = PathBuf::from(&home).join(".local/bin").join(bin_name);
+        if local_bin.exists() {
+            return Some(local_bin);
+        }
+        #[cfg(windows)]
+        {
+            let local_exe = PathBuf::from(&home)
+                .join(".local/bin")
+                .join(format!("{bin_name}.exe"));
+            if local_exe.exists() {
+                return Some(local_exe);
             }
         }
     }
-    if let Ok(home) = std::env::var("HOME") {
-        let cargo_bin = PathBuf::from(home)
-            .join(".cargo")
-            .join("bin")
-            .join(bin_name);
-        if cargo_bin.exists() {
-            return cargo_bin;
+
+    // 2. Check PATH, prioritizing fast non-mount paths first to avoid slow 9P/DrvFs lookups on WSL
+    if let Ok(path_var) = std::env::var("PATH") {
+        let all_dirs: Vec<PathBuf> = std::env::split_paths(&path_var).collect();
+        let (fast_dirs, slow_dirs): (Vec<_>, Vec<_>) = all_dirs.into_iter().partition(|d| {
+            let s = d.to_string_lossy();
+            !s.starts_with("/mnt/")
+        });
+
+        for dir in fast_dirs.into_iter().chain(slow_dirs) {
+            let full = dir.join(bin_name);
+            if full.exists() {
+                return Some(full);
+            }
+            #[cfg(windows)]
+            {
+                let full_exe = dir.join(format!("{bin_name}.exe"));
+                if full_exe.exists() {
+                    return Some(full_exe);
+                }
+            }
         }
     }
-    PathBuf::from(bin_name)
+
+    None
 }
 
+/// returns absolute path to executable or fallback binary name if not discovered in filesystem
+pub fn find_binary(bin_name: &str) -> PathBuf {
+    find_binary_cached(bin_name).unwrap_or_else(|| PathBuf::from(bin_name))
+}
+
+/// list of all recognized ex command string identifiers available for tab completion
 pub const ALL_COMMANDS: &[&str] = &[
     "b",
     "bc",
@@ -623,6 +721,7 @@ pub const ALL_COMMANDS: &[&str] = &[
     "ycb",
 ];
 
+/// filters and ranks candidate command identifiers matching partial user input
 pub fn get_command_completions(input: &str) -> Vec<&'static str> {
     let clean = input.trim_start_matches(':').trim();
     if clean.is_empty() {

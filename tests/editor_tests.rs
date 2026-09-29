@@ -1994,3 +1994,84 @@ fn test_ggvge_marks_entire_file_including_last_line() {
         "fn main() {\n    let x = 42;\n    println!(\"{x}\");\n}"
     );
 }
+
+#[test]
+fn test_save_current_fast_and_cached() {
+    let temp_dir = std::env::temp_dir();
+    let file = temp_dir.join("timing_test.rs");
+    let content =
+        std::fs::read_to_string("src/main.rs").unwrap_or_else(|_| "fn main() {}\n".to_string());
+    let mut buf = Buffer::new(file.clone()).unwrap();
+    buf.lines = content.lines().map(String::from).collect();
+    let mut editor = Editor {
+        buffers: vec![buf],
+        current_buffer: 0,
+        mode: Mode::Normal,
+        goto_return_mode: Mode::Normal,
+        match_return_mode: Mode::Normal,
+        match_state: MatchState::Menu,
+        clipboard: String::new(),
+        command_buffer: String::new(),
+        command_prefix: None,
+        command_completion_idx: 0,
+        status_message: None,
+        file_picker: None,
+        stdout: std::io::stdout(),
+        config: Config {
+            theme: "one-half-dark".to_string(),
+            editor: EditorConfig {
+                auto_format: true,
+                ..EditorConfig::default()
+            },
+        },
+        config_path: None,
+        theme: Theme::default(),
+        lsp: None,
+        toml_lsp: None,
+        completion: havax::completion::CompletionMenu::new(),
+        lsp_doc_version: 1,
+        prev_buffer_idx: 0,
+        active_completion_req: 0,
+        pending_c: false,
+        pending_r: false,
+        diagnostics: std::collections::HashMap::new(),
+        active_completion_version: 1,
+        pending_definition_req: None,
+        pending_lsp_change: None,
+    };
+
+    let _ = havax::lsp::find_taplo();
+    let t_taplo2 = std::time::Instant::now();
+    let _ = havax::lsp::find_taplo();
+    let d_taplo2 = t_taplo2.elapsed();
+    assert!(
+        d_taplo2 < std::time::Duration::from_millis(10),
+        "Cached binary resolution should be instantaneous: {:?}",
+        d_taplo2
+    );
+
+    // Unmodified buffer should skip formatting and write instantly
+    editor.buf_mut().modified = false;
+    let t_unmod = std::time::Instant::now();
+    editor.save_current().unwrap();
+    let d_unmod = t_unmod.elapsed();
+    assert!(
+        d_unmod < std::time::Duration::from_millis(50),
+        "Unmodified save should be fast: {:?}",
+        d_unmod
+    );
+
+    // auto_format = false should write instantly without spawning formatters
+    editor.config.editor.auto_format = false;
+    editor.buf_mut().modified = true;
+    let t1 = std::time::Instant::now();
+    editor.save_current().unwrap();
+    let d2 = t1.elapsed();
+    assert!(
+        d2 < std::time::Duration::from_millis(50),
+        "save without auto_format should be fast: {:?}",
+        d2
+    );
+
+    let _ = std::fs::remove_file(&file);
+}

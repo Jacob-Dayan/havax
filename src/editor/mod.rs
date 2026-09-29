@@ -1,3 +1,8 @@
+//! editor core orchestrating buffers, modal key bindings, lsp communication, and rendering
+//!
+//! maintains application lifecycle from terminal initialization and raw mode entry to
+//! background lsp event polling and alternate screen cleanup on exit
+
 use std::{
     collections::HashMap,
     error::Error,
@@ -31,6 +36,16 @@ pub mod render;
 
 pub use keymap::is_delete_word_backward;
 
+/// central state machine orchestrating buffers, lsp servers, file picker, and terminal ui
+///
+/// # Examples
+///
+/// ```
+/// use havax::{Config, Editor};
+///
+/// let editor = Editor::new(vec![], None, Config::default(), None).unwrap();
+/// assert_eq!(editor.buffers.len(), 1);
+/// ```
 pub struct Editor {
     pub buffers: Vec<Buffer>,
     pub current_buffer: usize,
@@ -63,6 +78,11 @@ pub struct Editor {
 }
 
 impl Editor {
+    /// initializes an editor session with provided file targets, optional directory picker, and configuration
+    ///
+    /// # Errors
+    ///
+    /// returns an error if reading initial target files fails
     pub fn new(
         paths: Vec<PathBuf>,
         open_dir: Option<PathBuf>,
@@ -86,6 +106,7 @@ impl Editor {
         let root_dir = crate::lsp::find_workspace_root(buffers.first().map(|b| b.path.as_path()));
         let lsp = LspClient::new_rust(root_dir.clone());
         let toml_lsp = LspClient::new_toml(root_dir);
+        let _ = crate::editor::commands::find_binary_cached("rustfmt");
         let completion = CompletionMenu::new();
 
         let editor = Self {
@@ -132,6 +153,11 @@ impl Editor {
         &mut self.buffers[self.current_buffer]
     }
 
+    /// configures terminal into alternate screen and enables raw mode for interactive editing
+    ///
+    /// # Errors
+    ///
+    /// returns an error if terminal raw mode entry or alternate screen setup fails
     pub fn init(&mut self) -> Result<(), Box<dyn Error>> {
         enable_raw_mode()?;
         if self.config.editor.mouse {
@@ -148,6 +174,11 @@ impl Editor {
         Ok(())
     }
 
+    /// restores terminal state, disables raw mode, and leaves alternate screen
+    ///
+    /// # Errors
+    ///
+    /// returns an error if disabling raw mode or leaving alternate screen fails
     pub fn cleanup(&mut self) -> Result<(), Box<dyn Error>> {
         if self.config.editor.mouse {
             let _ = execute!(self.stdout, crossterm::event::DisableMouseCapture);
@@ -163,34 +194,48 @@ impl Editor {
         Ok(())
     }
 
+    /// formats buffer at index using configured formatter without emitting status messages
     pub fn format_buffer_silent(&mut self, idx: usize) {
-        if idx >= self.buffers.len() {
+        if idx >= self.buffers.len() || !self.buffers[idx].modified {
             return;
         }
         let lang = self.buffers[idx].language().to_string();
         let content = self.buffers[idx].lines.join("\n");
         if lang == "rust" {
-            let rustfmt_bin = crate::editor::commands::find_binary("rustfmt");
-            if let Ok(mut child) = std::process::Command::new(&rustfmt_bin)
-                .stdin(std::process::Stdio::piped())
-                .stdout(std::process::Stdio::piped())
-                .stderr(std::process::Stdio::null())
-                .spawn()
-            {
-                if let Some(mut stdin) = child.stdin.take() {
-                    let _ = stdin.write_all(content.as_bytes());
-                }
-                if let Ok(out) = child.wait_with_output()
-                    && out.status.success()
+            if let Some(rustfmt_bin) = crate::editor::commands::find_binary_cached("rustfmt") {
+                let mut cmd = std::process::Command::new(&rustfmt_bin);
+                if let Some(edition) =
+                    crate::lsp::detect_rust_edition(Some(&self.buffers[idx].path))
                 {
-                    let formatted = String::from_utf8_lossy(&out.stdout);
-                    let buf = &mut self.buffers[idx];
-                    let new_lines: Vec<String> = formatted.lines().map(String::from).collect();
-                    if !new_lines.is_empty() && new_lines != buf.lines {
-                        buf.lines = new_lines;
-                        buf.clamp_cursor();
-                        buf.anchor = buf.cursor;
-                        buf.needs_reparse = true;
+                    cmd.args(["--edition", &edition]);
+                }
+                if let Some(parent) = self.buffers[idx].path.parent()
+                    && !parent.as_os_str().is_empty()
+                    && parent.exists()
+                {
+                    cmd.current_dir(parent);
+                }
+                if let Ok(mut child) = cmd
+                    .stdin(std::process::Stdio::piped())
+                    .stdout(std::process::Stdio::piped())
+                    .stderr(std::process::Stdio::null())
+                    .spawn()
+                {
+                    if let Some(mut stdin) = child.stdin.take() {
+                        let _ = stdin.write_all(content.as_bytes());
+                    }
+                    if let Ok(out) = child.wait_with_output()
+                        && out.status.success()
+                    {
+                        let formatted = String::from_utf8_lossy(&out.stdout);
+                        let buf = &mut self.buffers[idx];
+                        let new_lines: Vec<String> = formatted.lines().map(String::from).collect();
+                        if !new_lines.is_empty() && new_lines != buf.lines {
+                            buf.lines = new_lines;
+                            buf.clamp_cursor();
+                            buf.anchor = buf.cursor;
+                            buf.needs_reparse = true;
+                        }
                     }
                 }
             }
@@ -222,15 +267,27 @@ impl Editor {
         }
     }
 
+    /// writes active buffer content to disk and notifies language server of file save
+    ///
+    /// # Errors
+    ///
+    /// returns an error if filesystem write encounters an io failure
     pub fn save_current(&mut self) -> Result<(), Box<dyn Error>> {
         let cur = self.current_buffer;
-        let buf = self.buf_mut();
-        if buf.path.as_os_str().is_empty() || buf.path.to_string_lossy() == "scratch" {
+        let (empty_path, is_scratch, is_modified) = {
+            let b = &self.buffers[cur];
+            (
+                b.path.as_os_str().is_empty(),
+                b.path.to_string_lossy() == "scratch",
+                b.modified,
+            )
+        };
+        if empty_path || is_scratch {
             self.set_status("No file name. Use :w <PATH> to save.", true);
             return Ok(());
         }
 
-        if self.config.editor.auto_format {
+        if self.config.editor.auto_format && is_modified {
             self.format_buffer_silent(cur);
         }
 
@@ -255,6 +312,7 @@ impl Editor {
         Ok(())
     }
 
+    /// sends textDocument/didOpen notification to active language server for current buffer
     pub fn notify_lsp_open(&self) {
         let b = self.buf();
         if b.path.as_os_str().is_empty() {
@@ -275,12 +333,14 @@ impl Editor {
         }
     }
 
+    /// registers a pending document change to be dispatched after debounce delay
     pub fn notify_lsp_change(&mut self) {
         self.lsp_doc_version += 1;
         self.buf_mut().version += 1;
         self.pending_lsp_change = Some((self.current_buffer, std::time::Instant::now()));
     }
 
+    /// dispatches pending document changes to language server if debounce threshold expired or force is true
     pub fn flush_debounced_lsp_change(&mut self, force: bool) {
         let buf_idx = match self.pending_lsp_change {
             Some((idx, instant))
@@ -314,6 +374,7 @@ impl Editor {
         }
     }
 
+    /// sends textDocument/didSave notification to active language server
     pub fn notify_lsp_save(&mut self) {
         self.flush_debounced_lsp_change(true);
         let b = self.buf();
@@ -335,6 +396,7 @@ impl Editor {
         }
     }
 
+    /// requests completion candidates from language server at current cursor position
     pub fn trigger_completion(&mut self) {
         self.flush_debounced_lsp_change(true);
         if self.buf().needs_reparse || self.buf().tree.is_none() {
@@ -576,6 +638,7 @@ impl Editor {
         }
     }
 
+    /// applies currently selected completion candidate to active buffer
     pub fn accept_completion(&mut self) {
         if let Some(item) = self.completion.selected_item().cloned() {
             let insert_text = item
@@ -698,6 +761,7 @@ impl Editor {
         self.notify_lsp_change();
     }
 
+    /// applies auxiliary text edits like auto imports in reverse order to preserve offsets
     pub fn apply_additional_text_edits(buf: &mut Buffer, edits: &[crate::lsp::TextEdit]) {
         let mut sorted_edits = edits.to_vec();
         sorted_edits.sort_by(|a, b| {
@@ -766,6 +830,7 @@ impl Editor {
         buf.needs_reparse = true;
     }
 
+    /// returns collected diagnostics for specified buffer path
     pub fn get_buffer_diagnostics(
         &self,
         path: &std::path::Path,
@@ -787,10 +852,12 @@ impl Editor {
         Vec::new()
     }
 
+    /// updates statusline message text and error styling
     pub fn set_status(&mut self, msg: &str, is_error: bool) {
         self.status_message = Some((msg.to_string(), is_error));
     }
 
+    /// copies selection or current line to internal clipboard and system clipboard
     pub fn clipboard_yank(&mut self) {
         let buf = self.buf_mut();
         if buf.anchor == buf.cursor {
@@ -809,6 +876,7 @@ impl Editor {
         self.sync_system_clipboard();
     }
 
+    /// pushes internal clipboard content to system clipboard via osc 52 terminal sequence
     pub fn sync_system_clipboard(&mut self) {
         if !self.clipboard.is_empty() {
             let b64 = base64_encode(self.clipboard.as_bytes());
@@ -818,6 +886,11 @@ impl Editor {
         }
     }
 
+    /// opens file into buffer collection or focuses existing buffer if already loaded
+    ///
+    /// # Errors
+    ///
+    /// returns an error if reading target file from disk fails
     pub fn open_buffer(&mut self, path: PathBuf) -> Result<(), Box<dyn Error>> {
         if path.is_dir() {
             self.file_picker = Some(FilePicker::with_hidden(
@@ -862,6 +935,11 @@ impl Editor {
         Ok(())
     }
 
+    /// creates new named or scratch buffer and switches active focus to it
+    ///
+    /// # Errors
+    ///
+    /// returns an error if creating buffer fails
     pub fn new_buffer(&mut self, path: Option<PathBuf>) -> Result<(), Box<dyn Error>> {
         let p = path.unwrap_or_default();
         let is_unnamed = p.as_os_str().is_empty();
@@ -877,6 +955,7 @@ impl Editor {
         Ok(())
     }
 
+    /// rotates active buffer index to next buffer in collection
     pub fn next_buffer(&mut self) {
         if self.buffers.is_empty() {
             return;
@@ -896,6 +975,7 @@ impl Editor {
         );
     }
 
+    /// rotates active buffer index to previous buffer in collection
     pub fn prev_buffer(&mut self) {
         if self.buffers.is_empty() {
             return;
@@ -915,6 +995,7 @@ impl Editor {
         );
     }
 
+    /// toggles active buffer focus back to previously active buffer
     pub fn switch_alternate_buffer(&mut self) {
         if self.buffers.is_empty() {
             return;
@@ -936,6 +1017,7 @@ impl Editor {
         }
     }
 
+    /// switches active buffer focus to first buffer containing unsaved changes
     pub fn switch_last_modified_buffer(&mut self) {
         if self.buffers.is_empty() {
             return;
@@ -957,6 +1039,11 @@ impl Editor {
         }
     }
 
+    /// dispatches goto definition query to language server or falls back to text search
+    ///
+    /// # Errors
+    ///
+    /// returns an error if request dispatch fails
     pub fn goto_definition(&mut self) -> Result<(), Box<dyn Error>> {
         self.flush_debounced_lsp_change(true);
         let buf = self.buf();
@@ -987,6 +1074,11 @@ impl Editor {
         Ok(())
     }
 
+    /// dispatches goto type definition query to language server
+    ///
+    /// # Errors
+    ///
+    /// returns an error if request dispatch fails
     pub fn goto_type_definition(&mut self) -> Result<(), Box<dyn Error>> {
         self.flush_debounced_lsp_change(true);
         let buf = self.buf();
@@ -1005,6 +1097,11 @@ impl Editor {
         Ok(())
     }
 
+    /// dispatches goto implementation query to language server
+    ///
+    /// # Errors
+    ///
+    /// returns an error if request dispatch fails
     pub fn goto_implementation(&mut self) -> Result<(), Box<dyn Error>> {
         self.flush_debounced_lsp_change(true);
         let buf = self.buf();
@@ -1023,6 +1120,11 @@ impl Editor {
         Ok(())
     }
 
+    /// dispatches find references query to language server
+    ///
+    /// # Errors
+    ///
+    /// returns an error if request dispatch fails
     pub fn goto_references(&mut self) -> Result<(), Box<dyn Error>> {
         self.flush_debounced_lsp_change(true);
         let buf = self.buf();
@@ -1041,6 +1143,7 @@ impl Editor {
         Ok(())
     }
 
+    /// searches active buffer lines and standard library paths for definition of word
     pub fn fallback_definition_search(&mut self, word: &str) {
         if word.is_empty() {
             self.set_status("No definition found", false);
@@ -1097,6 +1200,11 @@ impl Editor {
         self.set_status("No definition found", false);
     }
 
+    /// opens file path or module name located under cursor
+    ///
+    /// # Errors
+    ///
+    /// returns an error if target file cannot be read
     pub fn goto_file(&mut self) -> Result<(), Box<dyn Error>> {
         let word = self.buf().get_word_at_cursor();
         let line = self
@@ -1133,6 +1241,11 @@ impl Editor {
         Ok(())
     }
 
+    /// navigates cursor to specified location opening target file if needed
+    ///
+    /// # Errors
+    ///
+    /// returns an error if target file cannot be loaded
     pub fn jump_to_location(&mut self, loc: &crate::lsp::Location) -> Result<(), Box<dyn Error>> {
         let target_idx = self.buffers.iter().position(|b| b.path == loc.path);
         if let Some(idx) = target_idx {
@@ -1157,6 +1270,11 @@ impl Editor {
         Ok(())
     }
 
+    /// closes active buffer or prompts when unsaved changes exist unless force is true
+    ///
+    /// # Errors
+    ///
+    /// returns an error if buffer closing encounters an unrecoverable state
     pub fn close_current_buffer(&mut self, force: bool) -> Result<bool, Box<dyn Error>> {
         if self.buffers.is_empty() {
             return Ok(false);
@@ -1177,6 +1295,7 @@ impl Editor {
         Ok(true)
     }
 
+    /// closes all buffers except current active buffer
     pub fn close_other_buffers(&mut self) {
         if self.buffers.len() <= 1 {
             self.set_status("No other buffers open", false);
@@ -1188,6 +1307,7 @@ impl Editor {
         self.set_status("Closed all other buffers", false);
     }
 
+    /// activates buffer matching 1-based index or containing file name substring
     pub fn switch_buffer_by_index_or_name(&mut self, target: &str) {
         if let Ok(idx) = target.parse::<usize>() {
             if idx >= 1 && idx <= self.buffers.len() {
@@ -1211,6 +1331,7 @@ impl Editor {
         }
     }
 
+    /// removes word or symbol sequence immediately preceding cursor in command line
     pub fn delete_command_word_backward(&mut self) {
         if self.command_buffer.is_empty() {
             return;
@@ -1239,6 +1360,7 @@ impl Editor {
         self.command_buffer = chars.into_iter().collect();
     }
 
+    /// drains pending events from language server channels returning whether redraw is needed
     pub fn poll_lsp_events(&mut self) -> bool {
         let mut needs_redraw = false;
 
@@ -1266,6 +1388,7 @@ impl Editor {
         needs_redraw
     }
 
+    /// processes individual language server event updating diagnostics, completions, or definitions
     pub fn handle_single_lsp_event(&mut self, ev: crate::lsp::LspEvent) -> bool {
         match ev {
             crate::lsp::LspEvent::PublishDiagnostics { path, diagnostics } => {
@@ -1381,6 +1504,11 @@ impl Editor {
         }
     }
 
+    /// runs main interactive event loop processing input events, lsp messages, and rendering
+    ///
+    /// # Errors
+    ///
+    /// returns an error if input polling or terminal rendering fails
     pub fn run_loop(&mut self) -> Result<(), Box<dyn Error>> {
         let mut needs_redraw = true;
 
@@ -1483,6 +1611,7 @@ impl Editor {
         Ok(())
     }
 
+    /// returns search directories for symbol definition fallback
     pub fn get_source_search_roots() -> Vec<PathBuf> {
         get_source_search_roots()
     }
@@ -1497,6 +1626,7 @@ impl Drop for Editor {
     }
 }
 
+/// encodes byte slice into base64 string
 pub fn base64_encode(data: &[u8]) -> String {
     const B64_CHARS: &[u8; 64] =
         b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
@@ -1523,6 +1653,7 @@ pub fn base64_encode(data: &[u8]) -> String {
     result
 }
 
+/// expands lsp tab stop snippet into formatted lines, anchor offset, and cursor offset
 pub fn expand_snippet(
     snippet: &str,
     base_indent: &str,
@@ -1711,6 +1842,7 @@ fn search_dir_for_symbol(
     None
 }
 
+/// searches rust standard library and cargo registry sources for symbol definition
 pub fn find_std_or_crate_definition(word: &str) -> Option<crate::lsp::Location> {
     if word.is_empty() {
         return None;

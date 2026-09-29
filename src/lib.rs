@@ -1,3 +1,8 @@
+//! fast terminal modal editor inspired by helix and built on ratatui and tree-sitter
+//!
+//! exposes core subsystems for buffer manipulation, configuration, lsp client communication,
+//! tree-sitter syntax highlighting, and terminal ui orchestration
+
 pub mod buffer;
 pub mod cli;
 pub mod config;
@@ -16,6 +21,19 @@ pub use syntax::grammar;
 pub use ui::picker;
 pub use ui::theme;
 
+/// traverses a directory tree collecting source files while sorting main entries to the front
+///
+/// skips hidden directories, target, and node_modules folders
+///
+/// # Examples
+///
+/// ```
+/// use std::path::Path;
+/// use havax::collect_directory_files_with_main_priority;
+///
+/// let files = collect_directory_files_with_main_priority(Path::new("."));
+/// assert!(!files.is_empty());
+/// ```
 pub fn collect_directory_files_with_main_priority(
     dir: &std::path::Path,
 ) -> Vec<std::path::PathBuf> {
@@ -53,6 +71,11 @@ pub fn collect_directory_files_with_main_priority(
     main_files
 }
 
+/// starts the terminal event loop, initializes alternate screens, and runs the editor to completion
+///
+/// # Errors
+///
+/// returns an error if terminal initialization, event loop handling, or cleanup fails
 pub fn run(
     paths: Vec<std::path::PathBuf>,
     open_dir: Option<std::path::PathBuf>,

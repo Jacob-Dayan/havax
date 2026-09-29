@@ -1,8 +1,13 @@
+//! syntax highlighting and token classification engine
+//!
+//! provides tree-sitter ast semantic tokenization and fast regex-free lexing fallbacks
+
 pub mod grammar;
 
 use crate::theme::*;
 use crossterm::style::Color;
 
+/// list of standard rust language keywords for lexer tokenization
 pub const RUST_KEYWORDS: &[&str] = &[
     "as", "async", "await", "break", "const", "continue", "crate", "dyn", "else", "enum", "extern",
     "false", "fn", "for", "if", "impl", "in", "let", "loop", "match", "mod", "move", "mut", "pub",
@@ -10,6 +15,7 @@ pub const RUST_KEYWORDS: &[&str] = &[
     "unsafe", "use", "where", "while",
 ];
 
+/// common rust standard library primitive and core type identifiers
 pub const RUST_TYPES: &[&str] = &[
     "bool", "char", "str", "u8", "u16", "u32", "u64", "u128", "usize", "i8", "i16", "i32", "i64",
     "i128", "isize", "f32", "f64", "String", "Vec", "Option", "Result", "Box", "Rc", "Arc", "Cell",
@@ -17,6 +23,7 @@ pub const RUST_TYPES: &[&str] = &[
     "PathBuf", "File", "Stdout", "Stdin", "Duration",
 ];
 
+/// classifies character into whitespace (0), word/symbol (1), or punctuation (2) category
 pub fn char_type(c: char) -> u8 {
     if c.is_whitespace() {
         0
@@ -27,6 +34,7 @@ pub fn char_type(c: char) -> u8 {
     }
 }
 
+/// applies fallback lexical highlighter to rust source line producing styled characters
 #[allow(clippy::needless_range_loop)]
 pub fn tokenize_rust_line(line: &str) -> Vec<(char, Color)> {
     let chars: Vec<char> = line.chars().collect();
@@ -286,6 +294,7 @@ pub fn tokenize_rust_line(line: &str) -> Vec<(char, Color)> {
     result
 }
 
+/// highlights single line based on file path extension for preview rendering
 pub fn tokenize_preview_line(path: &std::path::Path, line: &str) -> Vec<(char, Color)> {
     let ext = path
         .extension()
@@ -344,6 +353,7 @@ pub fn tokenize_preview_line(path: &std::path::Path, line: &str) -> Vec<(char, C
     line.chars().map(|c| (c, FG_COLOR)).collect()
 }
 
+/// checks whether tree-sitter node kind corresponds to a rust language keyword
 pub fn is_rust_keyword(kind: &str) -> bool {
     matches!(
         kind,
@@ -387,6 +397,7 @@ pub fn is_rust_keyword(kind: &str) -> bool {
     )
 }
 
+/// checks whether tree-sitter node kind corresponds to a rust operator token
 pub fn is_rust_operator(kind: &str) -> bool {
     matches!(
         kind,
@@ -578,6 +589,7 @@ fn walk_tree_node(
     }
 }
 
+/// resolves syntax highlight colors for a line using tree-sitter query captures
 pub fn highlight_line_treesitter(
     tree: Option<&tree_sitter::Tree>,
     path: Option<&std::path::Path>,

@@ -1,6 +1,11 @@
+//! tree-sitter grammar download, dynamic compilation, and runtime loading
+//!
+//! manages cloning grammar repositories, building dynamic libraries with cc, and loading shared objects
+
 use crate::config::Config;
 use std::{fs, path::PathBuf, process::Command};
 
+/// specification for fetching and compiling an external tree-sitter grammar repository
 #[allow(dead_code)]
 pub struct GrammarDef {
     pub name: &'static str,
@@ -9,6 +14,7 @@ pub struct GrammarDef {
     pub subpath: Option<&'static str>,
 }
 
+/// list of standard supported tree-sitter grammar sources
 pub const GRAMMARS: &[GrammarDef] = &[
     GrammarDef {
         name: "rust",
@@ -24,18 +30,22 @@ pub const GRAMMARS: &[GrammarDef] = &[
     },
 ];
 
+/// returns application runtime directory storing cached assets and compiled grammar libraries
 pub fn runtime_dir() -> PathBuf {
     Config::config_dir().join("runtime")
 }
 
+/// returns directory holding compiled grammar dynamic shared objects
 pub fn grammars_dir() -> PathBuf {
     runtime_dir().join("grammars")
 }
 
+/// returns directory containing cloned grammar source code repositories
 pub fn sources_dir() -> PathBuf {
     grammars_dir().join("sources")
 }
 
+/// returns target platform dynamic library file extension without leading dot
 pub fn dylib_extension() -> &'static str {
     #[cfg(target_os = "windows")]
     return "dll";
@@ -45,6 +55,11 @@ pub fn dylib_extension() -> &'static str {
     return "so";
 }
 
+/// clones or pulls tree-sitter grammar git repositories into runtime sources directory
+///
+/// # Errors
+///
+/// returns an error if creating sources directory fails
 pub fn fetch_grammars() -> Result<(), Box<dyn std::error::Error>> {
     let sources = sources_dir();
     fs::create_dir_all(&sources)?;
@@ -74,6 +89,11 @@ pub fn fetch_grammars() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
+/// compiles downloaded grammar c sources into shared libraries using system c compiler
+///
+/// # Errors
+///
+/// returns an error if creating grammars output directory fails
 pub fn build_grammars() -> Result<(), Box<dyn std::error::Error>> {
     let grammars = grammars_dir();
     let sources = sources_dir();
@@ -133,6 +153,7 @@ pub fn build_grammars() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
+/// verifies dynamic grammars exist on disk, initiating download and build if absent
 pub fn ensure_grammars_installed() {
     let grammars = grammars_dir();
     let ext = dylib_extension();
@@ -150,6 +171,7 @@ pub fn ensure_grammars_installed() {
     }
 }
 
+/// loads tree-sitter language parser from compiled dynamic library with fallback to static grammar
 pub fn load_language(name: &str) -> tree_sitter::Language {
     let ext = dylib_extension();
     let lib_path = grammars_dir().join(format!("{name}.{ext}"));

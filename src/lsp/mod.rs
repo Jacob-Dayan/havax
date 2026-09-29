@@ -1,3 +1,8 @@
+//! language server protocol client and background communication worker
+//!
+//! manages asynchronous json-rpc message dispatching over stdio, diagnostics ingestion,
+//! completion candidate querying, and definition lookup
+
 pub mod completion;
 pub mod rust_symbols;
 
@@ -16,6 +21,7 @@ use std::{
 use crossbeam_channel::{Receiver, Sender};
 use serde_json::{Value, json};
 
+/// severity level reported by language server diagnostics
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum DiagnosticSeverity {
     Error,
@@ -24,6 +30,7 @@ pub enum DiagnosticSeverity {
     Hint,
 }
 
+/// source code diagnostic message with line and column span bounds
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Diagnostic {
     pub line: usize,
@@ -33,6 +40,7 @@ pub struct Diagnostic {
     pub message: String,
 }
 
+/// single textual range replacement instruction from language server
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct TextEdit {
     pub start_line: usize,
@@ -42,6 +50,7 @@ pub struct TextEdit {
     pub new_text: String,
 }
 
+/// code completion item including label, kind, insert text, and auxiliary edits
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct CompletionItem {
     pub label: String,
@@ -51,6 +60,7 @@ pub struct CompletionItem {
     pub additional_text_edits: Vec<TextEdit>,
 }
 
+/// file path and line/column cursor coordinates target
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Location {
     pub path: PathBuf,
@@ -58,6 +68,7 @@ pub struct Location {
     pub col: usize,
 }
 
+/// internal command dispatched to the background language server writer thread
 pub enum LspCommand {
     Payload(Value),
     Request {
@@ -68,6 +79,7 @@ pub enum LspCommand {
     Stop,
 }
 
+/// categorization of active language server requests for correlation with responses
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum RequestKind {
     Completion { doc_version: i32 },
@@ -78,6 +90,7 @@ pub enum RequestKind {
     Other,
 }
 
+/// asynchronous event or notification emitted from language server reader thread
 #[derive(Clone, Debug)]
 pub enum LspEvent {
     PublishDiagnostics {
@@ -97,6 +110,17 @@ pub enum LspEvent {
     ServerExited,
 }
 
+/// asynchronous lsp client maintaining child process stdio channels and request tracking
+///
+/// # Examples
+///
+/// ```
+/// use std::path::PathBuf;
+/// use havax::lsp::LspClient;
+///
+/// let root = PathBuf::from(".");
+/// let _client = LspClient::new(root);
+/// ```
 pub struct LspClient {
     pub process: Option<Child>,
     pub cmd_tx: Sender<LspCommand>,
@@ -108,20 +132,24 @@ pub struct LspClient {
 }
 
 impl LspClient {
+    /// attempts to launch rust-analyzer language server client for given workspace root
     pub fn new(root_dir: PathBuf) -> Option<Self> {
         Self::new_rust(root_dir)
     }
 
+    /// attempts to locate and spawn rust-analyzer for workspace root
     pub fn new_rust(root_dir: PathBuf) -> Option<Self> {
         let ra_path = find_rust_analyzer()?;
         Self::spawn(&ra_path, &[], root_dir)
     }
 
+    /// attempts to locate and spawn taplo lsp for toml workspace configuration
     pub fn new_toml(root_dir: PathBuf) -> Option<Self> {
         let taplo_path = find_taplo()?;
         Self::spawn(&taplo_path, &["lsp", "stdio"], root_dir)
     }
 
+    /// spawns language server binary in background thread managing stdio streams
     pub fn spawn(bin_path: &Path, args: &[&str], root_dir: PathBuf) -> Option<Self> {
         let mut child = Command::new(bin_path)
             .args(args)
@@ -341,14 +369,17 @@ impl LspClient {
         Some(client)
     }
 
+    /// enqueues raw json-rpc payload to be transmitted to language server
     pub fn send_payload(&self, val: &Value) {
         let _ = self.cmd_tx.send(LspCommand::Payload(val.clone()));
     }
 
+    /// enqueues tracked json-rpc request to be dispatched over stdio
     pub fn send_request(&self, id: u64, kind: RequestKind, payload: Value) {
         let _ = self.cmd_tx.send(LspCommand::Request { id, kind, payload });
     }
 
+    /// sends textDocument/didOpen notification to language server
     pub fn notify_open(&self, path: &Path, language_id: &str, content: &str) {
         let uri = path_to_uri(path);
         let msg = json!({
@@ -366,6 +397,7 @@ impl LspClient {
         self.send_payload(&msg);
     }
 
+    /// sends textDocument/didChange full content synchronization notification
     pub fn notify_change(&self, path: &Path, version: i32, content: &str) {
         let uri = path_to_uri(path);
         let msg = json!({
@@ -386,6 +418,7 @@ impl LspClient {
         self.send_payload(&msg);
     }
 
+    /// sends textDocument/didSave notification to language server
     pub fn notify_save(&self, path: &Path) {
         let uri = path_to_uri(path);
         let msg = json!({
@@ -400,6 +433,7 @@ impl LspClient {
         self.send_payload(&msg);
     }
 
+    /// dispatches textDocument/completion request returning tracking request identifier
     pub fn request_completion(
         &self,
         path: &Path,
@@ -440,6 +474,7 @@ impl LspClient {
         id
     }
 
+    /// dispatches textDocument/definition request returning tracking request identifier
     pub fn request_definition(
         &self,
         path: &Path,
@@ -467,6 +502,7 @@ impl LspClient {
         id
     }
 
+    /// dispatches textDocument/typeDefinition request returning tracking request identifier
     pub fn request_type_definition(
         &self,
         path: &Path,
@@ -494,6 +530,7 @@ impl LspClient {
         id
     }
 
+    /// dispatches textDocument/implementation request returning tracking request identifier
     pub fn request_implementation(
         &self,
         path: &Path,
@@ -521,6 +558,7 @@ impl LspClient {
         id
     }
 
+    /// dispatches textDocument/references request returning tracking request identifier
     pub fn request_references(
         &self,
         path: &Path,
@@ -551,6 +589,7 @@ impl LspClient {
         id
     }
 
+    /// halts worker threads and terminates underlying language server process
     pub fn stop(&mut self) {
         self.is_running.store(false, Ordering::Relaxed);
         let _ = self.cmd_tx.send(LspCommand::Stop);
@@ -613,62 +652,38 @@ fn uri_to_path(uri: &str) -> Option<PathBuf> {
     Some(PathBuf::from(decoded))
 }
 
+/// searches filesystem PATH and cargo bin directories for rust-analyzer executable
 pub fn find_rust_analyzer() -> Option<PathBuf> {
-    // 1. Check user cargo bin
-    if let Ok(home) = std::env::var("HOME").or_else(|_| std::env::var("USERPROFILE")) {
-        let cargo_ra = PathBuf::from(&home).join(".cargo/bin/rust-analyzer");
-        if cargo_ra.exists() {
-            return Some(cargo_ra);
-        }
-    }
-    // 2. Check PATH
-    if let Ok(path_var) = std::env::var("PATH") {
-        for dir in std::env::split_paths(&path_var) {
-            let bin = dir.join("rust-analyzer");
-            if bin.exists() {
-                return Some(bin);
-            }
-            #[cfg(windows)]
-            {
-                let bin_exe = dir.join("rust-analyzer.exe");
-                if bin_exe.exists() {
-                    return Some(bin_exe);
-                }
-            }
-        }
-    }
-    // 3. Fallback to command name in path
-    Some(PathBuf::from("rust-analyzer"))
+    crate::editor::commands::find_binary_cached("rust-analyzer")
 }
 
+/// searches filesystem PATH and cargo bin directories for taplo executable
 pub fn find_taplo() -> Option<PathBuf> {
-    // 1. Check user cargo bin
-    if let Ok(home) = std::env::var("HOME").or_else(|_| std::env::var("USERPROFILE")) {
-        let cargo_taplo = PathBuf::from(&home).join(".cargo/bin/taplo");
-        if cargo_taplo.exists() {
-            return Some(cargo_taplo);
-        }
-    }
-    // 2. Check PATH
-    if let Ok(path_var) = std::env::var("PATH") {
-        for dir in std::env::split_paths(&path_var) {
-            let bin = dir.join("taplo");
-            if bin.exists() {
-                return Some(bin);
-            }
-            #[cfg(windows)]
-            {
-                let bin_exe = dir.join("taplo.exe");
-                if bin_exe.exists() {
-                    return Some(bin_exe);
+    crate::editor::commands::find_binary_cached("taplo")
+}
+
+/// reads cargo manifest for active workspace to detect configured rust edition
+pub fn detect_rust_edition(file_path: Option<&Path>) -> Option<String> {
+    let ws = find_workspace_root(file_path);
+    let cargo_toml = ws.join("Cargo.toml");
+    if let Ok(content) = std::fs::read_to_string(&cargo_toml) {
+        for line in content.lines() {
+            let trimmed = line.trim();
+            if trimmed.starts_with("edition") {
+                if trimmed.contains("2024") {
+                    return Some("2024".to_string());
+                } else if trimmed.contains("2021") {
+                    return Some("2021".to_string());
+                } else if trimmed.contains("2018") {
+                    return Some("2018".to_string());
                 }
             }
         }
     }
-    // 3. Fallback to command name in path
-    Some(PathBuf::from("taplo"))
+    None
 }
 
+/// walks upward through directory hierarchy to locate root folder containing cargo manifest
 pub fn find_workspace_root(file_path: Option<&Path>) -> PathBuf {
     if let Some(path) = file_path {
         let abs_path = if path.is_absolute() {
@@ -711,6 +726,7 @@ pub fn find_workspace_root(file_path: Option<&Path>) -> PathBuf {
     }
 }
 
+/// extracts file path, line, and column coordinates from lsp location payload
 pub fn parse_location(val: &Value) -> Option<Location> {
     if let Some(arr) = val.as_array() {
         if let Some(first) = arr.first() {
@@ -741,6 +757,7 @@ pub fn parse_location(val: &Value) -> Option<Location> {
     None
 }
 
+/// parses array of lsp text edit objects into strongly typed TextEdit structs
 pub fn parse_text_edits(val: &Value) -> Vec<TextEdit> {
     let mut edits = Vec::new();
     if let Some(arr) = val.as_array() {
@@ -973,6 +990,7 @@ fn handle_lsp_message(
     }
 }
 
+/// maps numerical lsp completion item kind code to human-readable string descriptor
 pub fn completion_kind_to_str(kind: u64) -> &'static str {
     match kind {
         1 => "text",
@@ -1004,7 +1022,7 @@ pub fn completion_kind_to_str(kind: u64) -> &'static str {
     }
 }
 
-/// Extracts symbol definitions from buffer lines and Tree-sitter AST
+/// extracts symbol definitions from buffer lines and tree-sitter ast
 pub fn extract_tree_sitter_symbols(
     tree: Option<&tree_sitter::Tree>,
     lines: &[String],
@@ -1037,7 +1055,7 @@ pub fn extract_tree_sitter_symbols(
     filtered
 }
 
-/// Extracts symbol definitions scoped to a struct, enum, trait, or module from Tree-sitter AST
+/// extracts symbol definitions scoped to a struct, enum, trait, or module from tree-sitter ast
 pub fn extract_tree_sitter_scoped_symbols(
     tree: Option<&tree_sitter::Tree>,
     lines: &[String],
@@ -1072,7 +1090,7 @@ pub fn extract_tree_sitter_scoped_symbols(
     filtered
 }
 
-/// Extracts trait method completions when the cursor is inside `impl Trait for CustomData`
+/// extracts trait method completions when the cursor is inside an impl block
 pub fn collect_trait_impl_completions(
     tree: Option<&tree_sitter::Tree>,
     lines: &[String],
@@ -1593,7 +1611,7 @@ fn collect_ast_scoped_symbols(
     }
 }
 
-/// Dynamically extracts method completions from Tree-sitter for a receiver expression
+/// dynamically extracts method completions from tree-sitter for a receiver expression
 pub fn extract_tree_sitter_methods(
     tree: Option<&tree_sitter::Tree>,
     lines: &[String],
@@ -1975,6 +1993,7 @@ fn get_node_text(node: tree_sitter::Node, lines: &[String]) -> String {
     }
 }
 
+/// splits compound identifier by camel case boundaries, underscores, and punctuation
 pub fn split_camel_case_or_words(s: &str) -> Vec<String> {
     let mut parts = Vec::new();
     let mut current = String::new();
@@ -2000,6 +2019,7 @@ pub fn split_camel_case_or_words(s: &str) -> Vec<String> {
     parts
 }
 
+/// calculates fuzzy match similarity score between user query and candidate string
 pub fn fuzzy_match_score(query: &str, candidate: &str) -> Option<u32> {
     let q = query.trim();
     if q.is_empty() {
@@ -2040,6 +2060,7 @@ pub fn fuzzy_match_score(query: &str, candidate: &str) -> Option<u32> {
     None
 }
 
+/// checks whether specified import path is already present in buffer lines
 pub fn is_import_in_buffer(lines: &[String], import_path: &str) -> bool {
     let short_name = import_path.split("::").last().unwrap_or(import_path);
     let mod_prefix = import_path.rsplit_once("::").map(|(m, _)| m).unwrap_or("");
@@ -2072,11 +2093,12 @@ pub fn is_import_in_buffer(lines: &[String], import_path: &str) -> bool {
     })
 }
 
+/// parses completion item metadata to construct requisite use declaration
 pub fn get_auto_import_for_item(label: &str, detail: Option<&str>) -> Option<String> {
     rust_symbols::resolve_rust_auto_import(label, detail)
 }
 
-/// Fallback / curated list of standard Rust completion items (matching Helix, rust-analyzer, and all keywords)
+/// returns completions for standard rust types, traits, and macros matching prefix
 pub fn get_standard_rust_completions(prefix: &str) -> Vec<CompletionItem> {
     let mut items = rust_symbols::get_standard_rust_symbol_completions(prefix);
     let extra = rust_symbols::discover_cargo_and_workspace_completions(prefix);
@@ -2088,7 +2110,7 @@ pub fn get_standard_rust_completions(prefix: &str) -> Vec<CompletionItem> {
     items
 }
 
-/// Curated list of standard TOML completion items (tables, properties, booleans, themes, cursor shapes)
+/// returns standard completions for Cargo.toml tables and configuration keys
 pub fn get_standard_toml_completions(prefix: &str) -> Vec<CompletionItem> {
     let standard_items = [
         // Sections / Tables
@@ -2359,6 +2381,7 @@ pub fn get_standard_toml_completions(prefix: &str) -> Vec<CompletionItem> {
     scored_results.into_iter().map(|(_, item)| item).collect()
 }
 
+/// checks whether characters of sub appear sequentially within target string
 pub fn is_subsequence(sub: &str, target: &str) -> bool {
     let mut target_chars = target.chars();
     for sc in sub.chars() {
@@ -2369,6 +2392,7 @@ pub fn is_subsequence(sub: &str, target: &str) -> bool {
     true
 }
 
+/// returns diagnostic items filtering by matching document path
 pub fn get_buffer_diagnostics(
     _path: &Path,
     _tree: Option<&tree_sitter::Tree>,

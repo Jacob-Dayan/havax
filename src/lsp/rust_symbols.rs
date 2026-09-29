@@ -1,5 +1,10 @@
+//! standard library rust symbols, snippets, and cargo dependency discovery
+//!
+//! provides offline fallback autocompletion for rust standard types, keywords, and workspace crates
+
 use crate::lsp::{CompletionItem, fuzzy_match_score};
 
+/// pre-indexed symbol metadata containing snippet templates and import details
 #[derive(Clone, Copy, Debug)]
 pub struct StandardSymbol {
     pub label: &'static str,
@@ -8,6 +13,7 @@ pub struct StandardSymbol {
     pub insert_text: &'static str,
 }
 
+/// catalog of standard rust keywords, types, traits, and common functions for fallback completion
 pub static STANDARD_RUST_SYMBOLS: &[StandardSymbol] = &[
     // Keywords with rich snippets
     StandardSymbol {
@@ -2004,6 +2010,7 @@ pub static STANDARD_RUST_SYMBOLS: &[StandardSymbol] = &[
     },
 ];
 
+/// queries static rust symbols against filter prefix and returns scored completion candidates
 pub fn get_standard_rust_symbol_completions(prefix: &str) -> Vec<CompletionItem> {
     let mut scored_results: Vec<(u32, CompletionItem)> = Vec::new();
 
@@ -2032,6 +2039,7 @@ pub fn get_standard_rust_symbol_completions(prefix: &str) -> Vec<CompletionItem>
     scored_results.into_iter().map(|(_, item)| item).collect()
 }
 
+/// inspects Cargo.toml dependencies and local workspace modules to supply project-specific completions
 pub fn discover_cargo_and_workspace_completions(prefix: &str) -> Vec<CompletionItem> {
     let mut raw_items = Vec::new();
     let p_lower = prefix.to_lowercase();
@@ -2244,6 +2252,7 @@ fn add_crate_dep(items: &mut Vec<CompletionItem>, dep: &str) {
     }
 }
 
+/// parses symbol detail metadata or label to derive the canonical use import path
 pub fn resolve_rust_auto_import(label: &str, detail: Option<&str>) -> Option<String> {
     if let Some(d) = detail {
         let trimmed = d.trim();

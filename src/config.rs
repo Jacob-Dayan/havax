@@ -1,9 +1,25 @@
+//! editor configuration schema and toml deserialization
+//!
+//! loads user preferences including themes, buffer tabs, line numbers, cursor shapes, and auto-formatting
+
 use serde::{Deserialize, Serialize};
 use std::{
     fs,
     path::{Path, PathBuf},
 };
 
+/// top-level editor configuration containing theme and runtime preferences
+///
+/// deserialized from toml config files located in workspace or user config directories
+///
+/// # Examples
+///
+/// ```
+/// use havax::Config;
+///
+/// let cfg = Config::default();
+/// assert_eq!(cfg.theme, "one-half-dark");
+/// ```
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Config {
     #[serde(default = "default_theme")]
@@ -17,6 +33,7 @@ fn default_theme() -> String {
     "one-half-dark".to_string()
 }
 
+/// editor behavioral settings controlling display modes, mouse, and formatting
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct EditorConfig {
     #[serde(default, rename = "line-number", alias = "line_number")]
@@ -98,6 +115,7 @@ impl Default for EditorConfig {
     }
 }
 
+/// line number display mode in the editor gutter
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 #[derive(Default)]
@@ -107,6 +125,7 @@ pub enum LineNumber {
     Relative,
 }
 
+/// buffer tab bar visibility mode
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 #[derive(Default)]
@@ -117,6 +136,7 @@ pub enum Bufferline {
     Never,
 }
 
+/// cursor shapes mapped to editor modal states
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CursorShapeConfig {
     #[serde(default = "default_cursor_insert")]
@@ -149,6 +169,7 @@ impl Default for CursorShapeConfig {
     }
 }
 
+/// terminal cursor display styles
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum CursorShape {
@@ -157,6 +178,7 @@ pub enum CursorShape {
     Underline,
 }
 
+/// file picker search behavior and filtering options
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FilePickerConfig {
     #[serde(default)]
@@ -193,6 +215,16 @@ impl Default for Config {
 }
 
 impl Config {
+    /// resolves the active user configuration directory following xdg or platform standards
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use havax::Config;
+    ///
+    /// let dir = Config::config_dir();
+    /// assert!(dir.to_str().unwrap().contains("havax"));
+    /// ```
     pub fn config_dir() -> PathBuf {
         if let Ok(dir) = std::env::var("XDG_CONFIG_HOME")
             && !dir.is_empty()
@@ -212,6 +244,18 @@ impl Config {
         PathBuf::from(".havax")
     }
 
+    /// finds the default configuration path by checking workspace and user config locations
+    ///
+    /// checks workspace `.havax` and `.helix` folders before falling back to home configuration directories
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use havax::Config;
+    ///
+    /// let path = Config::default_config_path();
+    /// assert!(path.ends_with("config.toml"));
+    /// ```
     pub fn default_config_path() -> PathBuf {
         // 1. Workspace-level config
         let ws_dot_havax = PathBuf::from(".havax/config.toml");
@@ -245,6 +289,16 @@ impl Config {
         Self::config_dir().join("config.toml")
     }
 
+    /// loads configuration from a custom path or the default resolved location with fallback to defaults
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use havax::Config;
+    ///
+    /// let cfg = Config::load(None);
+    /// assert!(!cfg.theme.is_empty());
+    /// ```
     pub fn load(custom_path: Option<&Path>) -> Self {
         let path = custom_path
             .map(PathBuf::from)
@@ -265,6 +319,11 @@ impl Config {
         Self::default()
     }
 
+    /// writes a documented sample configuration file to disk
+    ///
+    /// # Errors
+    ///
+    /// returns an error if creating directories or writing the file fails
     pub fn write_sample_config(path: &Path) -> std::io::Result<()> {
         if let Some(parent) = path.parent() {
             fs::create_dir_all(parent)?;
