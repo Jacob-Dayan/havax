@@ -2,6 +2,7 @@
 
 **Havax** is a modal, terminal-based text editor inspired by **[Helix](https://helix-editor.com/)**, tailored specifically for **Rust development**. It features true Tree-sitter syntax parsing, automatic grammar installation and building, Clap CLI argument parsing, and Helix-compatible TOML configuration.
 
+[![CI](https://img.shields.io/github/actions/workflow/status/Jacob-Dayan/havax/ci.yml?branch=main&style=flat-square)](https://github.com/Jacob-Dayan/havax/actions/workflows/ci.yml)
 ![Theme](https://img.shields.io/badge/theme-One%20Half%20Dark-c678dd?style=flat-square)
 ![Parser](https://img.shields.io/badge/parser-Tree--sitter-61afef?style=flat-square)
 ![Edition](https://img.shields.io/badge/rust-2024%20edition-fab387?style=flat-square)
