@@ -464,7 +464,7 @@ impl Editor {
 
     pub fn accept_completion(&mut self) {
         if let Some(item) = self.completion.selected_item().cloned() {
-            let insert_text = item
+            let mut insert_text = item
                 .insert_text
                 .as_deref()
                 .unwrap_or(&item.label)
@@ -500,6 +500,50 @@ impl Editor {
                 let suffix_after: String = chars[cur_col..].iter().collect();
 
                 let is_rust = buf.language() == "rust";
+                if is_rust {
+                    let is_macro = insert_text.ends_with('!')
+                        || item.label.ends_with('!')
+                        || item.label.contains("!(")
+                        || item.label.contains("![")
+                        || item.kind_name == "macro"
+                        || item.kind_name == "function.macro"
+                        || item.detail.as_deref().unwrap_or("").contains("macro");
+
+                    if is_macro {
+                        let trimmed_suffix = suffix_after.trim_start();
+                        if trimmed_suffix.starts_with('(') || trimmed_suffix.starts_with('[') {
+                            if let Some(paren_idx) = insert_text.find('(') {
+                                insert_text = insert_text[..paren_idx].trim().to_string();
+                            } else if let Some(bracket_idx) = insert_text.find('[') {
+                                insert_text = insert_text[..bracket_idx].trim().to_string();
+                            }
+                            if !insert_text.ends_with('!') {
+                                insert_text.push('!');
+                            }
+                        } else if !insert_text.contains('$') {
+                            let base_macro = if let Some(paren_idx) = insert_text.find('(') {
+                                insert_text[..paren_idx].trim().to_string()
+                            } else if let Some(bracket_idx) = insert_text.find('[') {
+                                insert_text[..bracket_idx].trim().to_string()
+                            } else {
+                                insert_text.clone()
+                            };
+                            let macro_with_bang = if base_macro.ends_with('!') {
+                                base_macro
+                            } else {
+                                format!("{base_macro}!")
+                            };
+                            if item.label.contains("![")
+                                || item.insert_text.as_deref().unwrap_or("").contains("![")
+                            {
+                                insert_text = format!("{macro_with_bang}[$0]");
+                            } else {
+                                insert_text = format!("{macro_with_bang}($0)");
+                            }
+                        }
+                    }
+                }
+
                 if is_rust
                     && is_fn_return_type_position(&buf.lines, row, &prefix_before, &insert_text)
                     && let Some((paren_row, _)) =

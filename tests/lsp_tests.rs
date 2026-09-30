@@ -1890,3 +1890,118 @@ fn test_autocomplete_fn_return_type_adds_arrow() {
     editor.accept_completion();
     assert_eq!(editor.buf().lines[0], "fn check(bool");
 }
+
+#[test]
+fn test_autocomplete_macro_opens_parentheses_and_places_cursor_inside() {
+    let mut buf = Buffer::new(PathBuf::from("src/main.rs")).unwrap();
+    buf.lines = vec!["    print".to_string()];
+    buf.cursor = Position { row: 0, col: 9 };
+    buf.anchor = buf.cursor;
+
+    let mut editor = Editor {
+        buffers: vec![buf],
+        current_buffer: 0,
+        mode: Mode::Insert,
+        goto_return_mode: Mode::Normal,
+        match_return_mode: Mode::Normal,
+        match_state: MatchState::Menu,
+        clipboard: String::new(),
+        command_buffer: String::new(),
+        command_prefix: None,
+        command_completion_idx: 0,
+        status_message: None,
+        file_picker: None,
+        stdout: std::io::stdout(),
+        config: Config::default(),
+        config_path: None,
+        theme: Theme::default(),
+        lsp: None,
+        toml_lsp: None,
+        completion: havax::completion::CompletionMenu::new(),
+        lsp_doc_version: 1,
+        prev_buffer_idx: 0,
+        active_completion_req: 0,
+        pending_c: false,
+        pending_r: false,
+        diagnostics: std::collections::HashMap::new(),
+        active_completion_version: 1,
+        pending_definition_req: None,
+        pending_lsp_change: None,
+    };
+
+    editor.trigger_completion();
+    assert!(editor.completion.visible);
+    let println_idx = editor
+        .completion
+        .items
+        .iter()
+        .position(|it| it.label.starts_with("println!"))
+        .expect("println macro completion");
+    editor.completion.selected_idx = println_idx;
+    editor.accept_completion();
+
+    assert_eq!(editor.buf().lines[0], "    println!()");
+    assert_eq!(editor.buf().cursor, Position { row: 0, col: 13 });
+    assert_eq!(editor.buf().anchor, Position { row: 0, col: 13 });
+
+    // Test format! macro
+    let mut buf2 = Buffer::new(PathBuf::from("src/main.rs")).unwrap();
+    buf2.lines = vec!["forma".to_string()];
+    buf2.cursor = Position { row: 0, col: 5 };
+    editor.buffers = vec![buf2];
+
+    editor.trigger_completion();
+    assert!(editor.completion.visible);
+    let format_idx = editor
+        .completion
+        .items
+        .iter()
+        .position(|it| it.label.starts_with("format!"))
+        .expect("format macro completion");
+    editor.completion.selected_idx = format_idx;
+    editor.accept_completion();
+
+    assert_eq!(editor.buf().lines[0], "format!()");
+    assert_eq!(editor.buf().cursor, Position { row: 0, col: 8 });
+
+    // Test dynamic macro item ending with !
+    let mut buf3 = Buffer::new(PathBuf::from("src/main.rs")).unwrap();
+    buf3.lines = vec!["custom_".to_string()];
+    buf3.cursor = Position { row: 0, col: 7 };
+    editor.buffers = vec![buf3];
+
+    editor.completion.show(
+        0,
+        "custom_",
+        vec![havax::lsp::CompletionItem {
+            label: "custom_macro!".to_string(),
+            detail: None,
+            kind_name: "macro".to_string(),
+            insert_text: Some("custom_macro!".to_string()),
+            additional_text_edits: Vec::new(),
+        }],
+    );
+    editor.completion.selected_idx = 0;
+    editor.accept_completion();
+
+    assert_eq!(editor.buf().lines[0], "custom_macro!()");
+    assert_eq!(editor.buf().cursor, Position { row: 0, col: 14 });
+
+    // Test when parentheses already exist after cursor: does not duplicate
+    let mut buf4 = Buffer::new(PathBuf::from("src/main.rs")).unwrap();
+    buf4.lines = vec!["print(\"hello\")".to_string()];
+    buf4.cursor = Position { row: 0, col: 5 };
+    editor.buffers = vec![buf4];
+
+    editor.trigger_completion();
+    let println_idx4 = editor
+        .completion
+        .items
+        .iter()
+        .position(|it| it.label.starts_with("println!"))
+        .expect("println macro completion");
+    editor.completion.selected_idx = println_idx4;
+    editor.accept_completion();
+
+    assert_eq!(editor.buf().lines[0], "println!(\"hello\")");
+}
