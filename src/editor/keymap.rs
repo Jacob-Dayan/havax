@@ -366,7 +366,23 @@ impl Editor {
                 }
 
                 // Select whole buffer (Helix %)
-                (KeyCode::Char('%'), KeyModifiers::NONE) => {
+                (KeyCode::Char('%'), m)
+                    if !m.contains(KeyModifiers::CONTROL) && !m.contains(KeyModifiers::ALT) =>
+                {
+                    let buf = self.buf_mut();
+                    buf.anchor = Position { row: 0, col: 0 };
+                    let last_row = buf.lines.len().saturating_sub(1);
+                    let last_col = buf.lines[last_row].chars().count();
+                    buf.cursor = Position {
+                        row: last_row,
+                        col: last_col,
+                    };
+                }
+                (KeyCode::Char('5'), m)
+                    if m.contains(KeyModifiers::SHIFT)
+                        && !m.contains(KeyModifiers::CONTROL)
+                        && !m.contains(KeyModifiers::ALT) =>
+                {
                     let buf = self.buf_mut();
                     buf.anchor = Position { row: 0, col: 0 };
                     let last_row = buf.lines.len().saturating_sub(1);
@@ -465,7 +481,17 @@ impl Editor {
                 }
 
                 // Command mode
-                (KeyCode::Char(':'), KeyModifiers::NONE) => {
+                (KeyCode::Char(':'), m)
+                    if !m.contains(KeyModifiers::CONTROL) && !m.contains(KeyModifiers::ALT) =>
+                {
+                    self.command_buffer.clear();
+                    self.mode = Mode::Command;
+                }
+                (KeyCode::Char(';'), m)
+                    if m.contains(KeyModifiers::SHIFT)
+                        && !m.contains(KeyModifiers::CONTROL)
+                        && !m.contains(KeyModifiers::ALT) =>
+                {
                     self.command_buffer.clear();
                     self.mode = Mode::Command;
                 }
@@ -585,7 +611,23 @@ impl Editor {
                     let buf = self.buf_mut();
                     buf.cursor.col = buf.lines[buf.cursor.row].chars().count();
                 }
-                (KeyCode::Char('%'), KeyModifiers::NONE) => {
+                (KeyCode::Char('%'), m)
+                    if !m.contains(KeyModifiers::CONTROL) && !m.contains(KeyModifiers::ALT) =>
+                {
+                    let buf = self.buf_mut();
+                    buf.anchor = Position { row: 0, col: 0 };
+                    let last_row = buf.lines.len().saturating_sub(1);
+                    let last_col = buf.lines[last_row].chars().count();
+                    buf.cursor = Position {
+                        row: last_row,
+                        col: last_col,
+                    };
+                }
+                (KeyCode::Char('5'), m)
+                    if m.contains(KeyModifiers::SHIFT)
+                        && !m.contains(KeyModifiers::CONTROL)
+                        && !m.contains(KeyModifiers::ALT) =>
+                {
                     let buf = self.buf_mut();
                     buf.anchor = Position { row: 0, col: 0 };
                     let last_row = buf.lines.len().saturating_sub(1);
@@ -652,7 +694,17 @@ impl Editor {
                 }
 
                 // Command mode
-                (KeyCode::Char(':'), KeyModifiers::NONE) => {
+                (KeyCode::Char(':'), m)
+                    if !m.contains(KeyModifiers::CONTROL) && !m.contains(KeyModifiers::ALT) =>
+                {
+                    self.command_buffer.clear();
+                    self.mode = Mode::Command;
+                }
+                (KeyCode::Char(';'), m)
+                    if m.contains(KeyModifiers::SHIFT)
+                        && !m.contains(KeyModifiers::CONTROL)
+                        && !m.contains(KeyModifiers::ALT) =>
+                {
                     self.command_buffer.clear();
                     self.mode = Mode::Command;
                 }
@@ -1181,7 +1233,9 @@ impl Editor {
             }
 
             Mode::Replace => match (code, modifiers) {
-                (KeyCode::Esc, _) | (KeyCode::Char('R'), KeyModifiers::NONE) => {
+                (KeyCode::Esc, _)
+                | (KeyCode::Char('R'), _)
+                | (KeyCode::Char('r'), KeyModifiers::SHIFT) => {
                     self.mode = Mode::Normal;
                     let buf = self.buf_mut();
                     if buf.cursor.col > 0

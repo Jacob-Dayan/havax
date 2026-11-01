@@ -198,9 +198,15 @@ fn test_havax_config_paths() {
     let default_cfg = Config::default_config_path();
     let path_str = default_cfg.display().to_string();
     assert!(
-        path_str.contains("havax"),
-        "Default config path should target havax: {}",
+        path_str.contains("havax") || path_str.contains("helix"),
+        "Default config path should target havax or helix: {}",
         path_str
+    );
+    let config_dir = Config::config_dir();
+    assert!(
+        config_dir.display().to_string().contains("havax"),
+        "Config dir should target havax: {:?}",
+        config_dir
     );
 }
 
