@@ -2079,7 +2079,11 @@ fn test_save_current_fast_and_cached() {
 #[test]
 fn test_colon_and_percent_key_handling_with_modifiers() {
     let mut b1 = Buffer::new(PathBuf::from("scratch")).unwrap();
-    b1.lines = vec!["line 1".to_string(), "line 2".to_string(), "line 3".to_string()];
+    b1.lines = vec![
+        "line 1".to_string(),
+        "line 2".to_string(),
+        "line 3".to_string(),
+    ];
 
     let mut editor = Editor {
         buffers: vec![b1],
@@ -2113,47 +2117,81 @@ fn test_colon_and_percent_key_handling_with_modifiers() {
     };
 
     // 1. Normal mode: Char(':') with KeyModifiers::NONE
-    editor.handle_key(KeyCode::Char(':'), KeyModifiers::NONE).unwrap();
+    editor
+        .handle_key(KeyCode::Char(':'), KeyModifiers::NONE)
+        .unwrap();
     assert_eq!(editor.mode, Mode::Command);
     editor.handle_key(KeyCode::Esc, KeyModifiers::NONE).unwrap();
     assert_eq!(editor.mode, Mode::Normal);
 
     // 2. Normal mode: Char(':') with KeyModifiers::SHIFT (as sent on Windows by crossterm)
-    editor.handle_key(KeyCode::Char(':'), KeyModifiers::SHIFT).unwrap();
-    assert_eq!(editor.mode, Mode::Command, "Shift+':' on Windows must enter Command mode");
+    editor
+        .handle_key(KeyCode::Char(':'), KeyModifiers::SHIFT)
+        .unwrap();
+    assert_eq!(
+        editor.mode,
+        Mode::Command,
+        "Shift+':' on Windows must enter Command mode"
+    );
     editor.handle_key(KeyCode::Esc, KeyModifiers::NONE).unwrap();
     assert_eq!(editor.mode, Mode::Normal);
 
     // 3. Normal mode: Char(';') with KeyModifiers::SHIFT (fallback if terminal sends unshifted char)
-    editor.handle_key(KeyCode::Char(';'), KeyModifiers::SHIFT).unwrap();
-    assert_eq!(editor.mode, Mode::Command, "Shift+';' must enter Command mode");
+    editor
+        .handle_key(KeyCode::Char(';'), KeyModifiers::SHIFT)
+        .unwrap();
+    assert_eq!(
+        editor.mode,
+        Mode::Command,
+        "Shift+';' must enter Command mode"
+    );
     editor.handle_key(KeyCode::Esc, KeyModifiers::NONE).unwrap();
     assert_eq!(editor.mode, Mode::Normal);
 
     // 4. Visual mode: Char(':') with KeyModifiers::SHIFT
-    editor.handle_key(KeyCode::Char('v'), KeyModifiers::NONE).unwrap();
+    editor
+        .handle_key(KeyCode::Char('v'), KeyModifiers::NONE)
+        .unwrap();
     assert_eq!(editor.mode, Mode::Visual);
-    editor.handle_key(KeyCode::Char(':'), KeyModifiers::SHIFT).unwrap();
-    assert_eq!(editor.mode, Mode::Command, "Shift+':' in Visual mode must enter Command mode");
+    editor
+        .handle_key(KeyCode::Char(':'), KeyModifiers::SHIFT)
+        .unwrap();
+    assert_eq!(
+        editor.mode,
+        Mode::Command,
+        "Shift+':' in Visual mode must enter Command mode"
+    );
     editor.handle_key(KeyCode::Esc, KeyModifiers::NONE).unwrap();
     assert_eq!(editor.mode, Mode::Normal);
 
     // 5. Select whole buffer with '%' and Shift (as sent on Windows for Shift+5)
-    editor.handle_key(KeyCode::Char('%'), KeyModifiers::SHIFT).unwrap();
+    editor
+        .handle_key(KeyCode::Char('%'), KeyModifiers::SHIFT)
+        .unwrap();
     assert_eq!(editor.buf().anchor, Position { row: 0, col: 0 });
     assert_eq!(editor.buf().cursor, Position { row: 2, col: 6 });
 
     // 6. Select whole buffer with Char('5') + Shift
     editor.buf_mut().cursor = Position { row: 0, col: 0 };
     editor.buf_mut().anchor = Position { row: 0, col: 0 };
-    editor.handle_key(KeyCode::Char('5'), KeyModifiers::SHIFT).unwrap();
+    editor
+        .handle_key(KeyCode::Char('5'), KeyModifiers::SHIFT)
+        .unwrap();
     assert_eq!(editor.buf().anchor, Position { row: 0, col: 0 });
     assert_eq!(editor.buf().cursor, Position { row: 2, col: 6 });
 
     // 7. Replace mode exit with Shift+R
     editor.mode = Mode::Normal;
-    editor.handle_key(KeyCode::Char('R'), KeyModifiers::SHIFT).unwrap();
+    editor
+        .handle_key(KeyCode::Char('R'), KeyModifiers::SHIFT)
+        .unwrap();
     assert_eq!(editor.mode, Mode::Replace);
-    editor.handle_key(KeyCode::Char('R'), KeyModifiers::SHIFT).unwrap();
-    assert_eq!(editor.mode, Mode::Normal, "Shift+'R' in Replace mode must exit to Normal mode");
+    editor
+        .handle_key(KeyCode::Char('R'), KeyModifiers::SHIFT)
+        .unwrap();
+    assert_eq!(
+        editor.mode,
+        Mode::Normal,
+        "Shift+'R' in Replace mode must exit to Normal mode"
+    );
 }
