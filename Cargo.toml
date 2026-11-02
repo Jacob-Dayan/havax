@@ -1,6 +1,6 @@
 [package]
 name = "havax"
-version = "0.1.5"
+version = "0.1.6"
 edition = "2024"
 license = "MPL-2.0"
 description = "A modal, Helix-like terminal editor for Rust development"
@@ -25,6 +25,10 @@ incremental = false
 incremental = false
 
 [profile.release]
+lto = "thin"
+
+[profile.prod]
+inherits = "release"
 lto = "fat"
 codegen-units = 1
 panic = "abort"
