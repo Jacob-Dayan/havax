@@ -90,6 +90,7 @@ impl Buffer {
         }
 
         let mut line_chars: Vec<char> = self.lines[row].chars().collect();
+        let initial_col = col;
         if col < line_chars.len() {
             let initial_type = char_type(line_chars[col]);
             if initial_type != 0 {
@@ -102,12 +103,19 @@ impl Buffer {
             }
         }
 
-        if col >= line_chars.len() && row + 1 < self.lines.len() {
-            row += 1;
-            col = 0;
-            line_chars = self.lines[row].chars().collect();
-            while col < line_chars.len() && char_type(line_chars[col]) == 0 {
-                col += 1;
+        if col >= line_chars.len() {
+            let last_char_col = line_chars.len().saturating_sub(1);
+            if !line_chars.is_empty() && initial_col < last_char_col {
+                col = last_char_col;
+            } else if row + 1 < self.lines.len() {
+                row += 1;
+                col = 0;
+                line_chars = self.lines[row].chars().collect();
+                while col < line_chars.len() && char_type(line_chars[col]) == 0 {
+                    col += 1;
+                }
+            } else {
+                col = last_char_col;
             }
         }
 

@@ -2195,3 +2195,84 @@ fn test_colon_and_percent_key_handling_with_modifiers() {
         "Shift+'R' in Replace mode must exit to Normal mode"
     );
 }
+
+#[test]
+fn test_ctrl_right_arrow_on_last_word_of_line_goes_to_last_char_first() {
+    let mut b = Buffer::new(PathBuf::from("test.rs")).unwrap();
+    b.lines = vec!["hello world".to_string(), "second line".to_string()];
+    let mut editor = Editor {
+        buffers: vec![b],
+        current_buffer: 0,
+        mode: Mode::Normal,
+        goto_return_mode: Mode::Normal,
+        match_return_mode: Mode::Normal,
+        match_state: MatchState::Menu,
+        clipboard: String::new(),
+        command_buffer: String::new(),
+        command_prefix: None,
+        command_completion_idx: 0,
+        status_message: None,
+        file_picker: None,
+        stdout: std::io::stdout(),
+        config: Config::default(),
+        config_path: None,
+        theme: Theme::default(),
+        lsp: None,
+        toml_lsp: None,
+        completion: havax::completion::CompletionMenu::new(),
+        lsp_doc_version: 1,
+        prev_buffer_idx: 0,
+        active_completion_req: 0,
+        pending_c: false,
+        pending_r: false,
+        diagnostics: std::collections::HashMap::new(),
+        active_completion_version: 1,
+        pending_definition_req: None,
+        pending_lsp_change: None,
+    };
+
+    // 1. Normal mode Ctrl+Right
+    editor.buf_mut().cursor = Position { row: 0, col: 0 };
+    editor.buf_mut().anchor = Position { row: 0, col: 0 };
+
+    // Move to start of "world" (col 6)
+    let _ = editor.handle_key(KeyCode::Right, KeyModifiers::CONTROL);
+    assert_eq!(editor.buf().cursor, Position { row: 0, col: 6 });
+
+    // On last word "world", Ctrl+Right must go to the last char ('d', col 10), NOT down to line 1
+    let _ = editor.handle_key(KeyCode::Right, KeyModifiers::CONTROL);
+    assert_eq!(
+        editor.buf().cursor,
+        Position { row: 0, col: 10 },
+        "Ctrl+Right on the last word must land on the last char of the line"
+    );
+
+    // Pressing Ctrl+Right again while on the last char must now go down to line 1
+    let _ = editor.handle_key(KeyCode::Right, KeyModifiers::CONTROL);
+    assert_eq!(editor.buf().cursor, Position { row: 1, col: 0 });
+
+    // 2. Helix 'w' key in Normal mode
+    editor.buf_mut().cursor = Position { row: 0, col: 6 };
+    editor.buf_mut().anchor = Position { row: 0, col: 6 };
+    let _ = editor.handle_key(KeyCode::Char('w'), KeyModifiers::NONE);
+    assert_eq!(
+        editor.buf().cursor,
+        Position { row: 0, col: 10 },
+        "'w' on the last word must land on the last char of the line"
+    );
+    let _ = editor.handle_key(KeyCode::Char('w'), KeyModifiers::NONE);
+    assert_eq!(editor.buf().cursor, Position { row: 1, col: 0 });
+
+    // 3. Insert mode Ctrl+Right
+    editor.mode = Mode::Insert;
+    editor.buf_mut().cursor = Position { row: 0, col: 6 };
+    editor.buf_mut().anchor = Position { row: 0, col: 6 };
+    let _ = editor.handle_key(KeyCode::Right, KeyModifiers::CONTROL);
+    assert_eq!(
+        editor.buf().cursor,
+        Position { row: 0, col: 10 },
+        "Ctrl+Right in Insert mode on the last word must land on the last char of the line"
+    );
+    let _ = editor.handle_key(KeyCode::Right, KeyModifiers::CONTROL);
+    assert_eq!(editor.buf().cursor, Position { row: 1, col: 0 });
+}
