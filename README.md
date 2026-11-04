@@ -2,11 +2,11 @@
 
 **Havax** is a modal, terminal-based text editor inspired by **[Helix](https://helix-editor.com/)**, tailored specifically for **Rust development**. It features true Tree-sitter syntax parsing, automatic grammar installation and building, Clap CLI argument parsing, and Helix-compatible TOML configuration.
 
-[![CI](https://img.shields.io/github/actions/workflow/status/Jacob-Dayan/havax/ci.yml?branch=main&style=flat-square)](https://github.com/Jacob-Dayan/havax/actions/workflows/ci.yml)
-![Theme](https://img.shields.io/badge/theme-One%20Half%20Dark-c678dd?style=flat-square)
-![Parser](https://img.shields.io/badge/parser-Tree--sitter-61afef?style=flat-square)
-![Edition](https://img.shields.io/badge/rust-2024%20edition-fab387?style=flat-square)
-![License](https://img.shields.io/badge/license-MPL--2.0-blue?style=flat-square)
+[![CI](https://github.com/Jacob-Dayan/havax/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/Jacob-Dayan/havax/actions/workflows/ci.yml)
+[![Theme](https://img.shields.io/badge/theme-One%20Half%20Dark-c678dd.svg)]()
+[![Parser](https://img.shields.io/badge/parser-Tree--sitter-61afef.svg)]()
+[![Edition](https://img.shields.io/badge/Rust-2024%20Edition-orange.svg)](https://www.rust-lang.org)
+[![License: MPL-2.0](https://img.shields.io/badge/License-MPL--2.0-blue.svg)](https://www.mozilla.org/en-US/MPL/2.0/)
 
 ---
 
