@@ -27,7 +27,7 @@ incremental = false
 [profile.release]
 lto = "thin"
 
-[profile.prod]
+[profile.opt]
 inherits = "release"
 lto = "fat"
 codegen-units = 1

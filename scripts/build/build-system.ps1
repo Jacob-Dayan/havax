@@ -11,19 +11,19 @@ if (-not $isAdmin) {
 $repoRoot = (Resolve-Path "$PSScriptRoot\..\..").Path
 Set-Location $repoRoot
 
-cargo build --release
+cargo build --profile opt
 
 $targetDir = Join-Path $env:ProgramFiles 'Havax\app'
 if (-not (Test-Path $targetDir)) {
     New-Item -ItemType Directory -Force -Path $targetDir | Out-Null
 }
 
-$sourceExe = Join-Path $repoRoot 'target\release\havax.exe'
+$sourceExe = Join-Path $repoRoot 'target\opt\havax.exe'
 if (-not (Test-Path $sourceExe)) {
     try {
         $cargoTarget = (cargo metadata --format-version 1 --no-deps | ConvertFrom-Json).target_directory
         if ($cargoTarget) {
-            $candidate = Join-Path $cargoTarget 'release\havax.exe'
+            $candidate = Join-Path $cargoTarget 'opt\havax.exe'
             if (Test-Path $candidate) {
                 $sourceExe = $candidate
             }

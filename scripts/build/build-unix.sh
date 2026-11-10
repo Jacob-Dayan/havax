@@ -9,7 +9,7 @@ target-dir="/dev/shm/havax-target"
 EOF
 fi
 
-cargo build --release
-sudo mv /dev/shm/havax-target/release/havax /usr/local/bin/hv
+cargo build --profile opt
+sudo mv /dev/shm/havax-target/opt/havax /usr/local/bin/hv
 hv -V
 
