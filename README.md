@@ -357,6 +357,3 @@ All 76 integration and unit tests verify:
 ## License
 
 This project is licensed under the **Mozilla Public License Version 2.0 (MPL-2.0)**. See the [LICENSE](file:///wsl.localhost/Ubuntu/home/shahar/codes/rust/havax/LICENSE) file for the full license text.
-
-
-> *Note*: I have no shit to make a full damm editor so I use antigravity to vibecode this entire program.
