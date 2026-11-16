@@ -231,15 +231,28 @@ impl Config {
         {
             return PathBuf::from(dir).join("havax");
         }
+        #[cfg(target_os = "windows")]
+        if let Ok(appdata) = std::env::var("APPDATA")
+            && !appdata.is_empty()
+        {
+            return PathBuf::from(appdata).join("havax");
+        }
         if let Ok(home) = std::env::var("HOME")
             && !home.is_empty()
         {
             return PathBuf::from(home).join(".config").join("havax");
         }
+        #[cfg(not(target_os = "windows"))]
         if let Ok(appdata) = std::env::var("APPDATA")
             && !appdata.is_empty()
         {
             return PathBuf::from(appdata).join("havax");
+        }
+        #[cfg(target_os = "windows")]
+        if let Ok(profile) = std::env::var("USERPROFILE")
+            && !profile.is_empty()
+        {
+            return PathBuf::from(profile).join(".config").join("havax");
         }
         PathBuf::from(".havax")
     }
